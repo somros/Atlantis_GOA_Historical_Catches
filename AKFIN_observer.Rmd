@@ -1,0 +1,153 @@
+---
+title: "Observer data"
+author: "Alberto Rovellini"
+date: "8/6/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(rbgm)
+library(sf)
+library(viridis)
+library(maps)
+library(mapdata)
+library(data.table)
+```
+
+```{r}
+select <- dplyr::select
+```
+
+This document explores observer data from [AKFIN](https://akfinbi.psmfc.org/analytics/saw.dll?Dashboard). The data is called [NORPAC Catch Report](https://akfinbi.psmfc.org/analytics/saw.dll?Dashboard&PortalPath=%2fshared%2fStock%20Assessment%2f_portal%2fStock%20Assessment&Page=NORPAC%20Catch%20Report&Done=Dashboard%26PortalPath%3d%252fshared%252fStock%2520Assessment%252f_portal%252fStock%2520Assessment%26Page%3dObserver%2520and%2520EM%2520Data%26ViewState%3dt8rvrc7c2svggcggmbmq9ce062). Here are the Report Criteria:
+
+* Year: 1989-2019 (in smaller chunks)
+* FMP Area: GOA
+* FMP Subarea: --Select Value--
+* NMFS Area: --Select Value--
+* Gear Code: --Select Value--
+* Gear Description: --Select Value--
+* Performance: --Select Value--
+* Performance Description: --Select Value--
+* Species Code: --Select Value--
+* Species Name: --Select Value--
+
+There seem to be some issues with AKFIN not picking the correct years that we select. Let's use distinct().
+
+Read data.
+```{r}
+all_files <- list.files('AKFIN/Observer/',full.names = TRUE)
+obs_list <- lapply(all_files, read.csv, skip=6)
+
+obs <- rbindlist(obs_list)
+
+# distinct rows
+obs <- obs %>% distinct()
+
+glimpse(obs)
+```
+
+WHat is our minimal unit here? The haul is. Does it make any sense to model this with an sdmTMB approach, to produce sheets?
+
+Can we make sense of what "Extrapolated weight" means here? Does it mean biomass in the haul based on the sample? Sum these for each species within a haul, and compare with the official catch.
+```{r}
+obs %>% group_by(Year,Haul.Join,Official.Total.Catch..mt.) %>% summarise(Tot.weight = sum(Extrapolated.Weight..kg.,na.rm=T)) %>% ungroup() %>% filter(Tot.weight!=0) %>% 
+  #filter(Year==1989) %>%
+  ggplot(aes(x=Official.Total.Catch..mt.,y=Tot.weight,color=factor(Year)))+
+  theme_minimal()+
+  geom_point()
+```
+
+It appears that the extrapolated weight is the weight of this species in the haul, estimated from the sample taken from the haul. That is, an approximation of the catch in the haul.
+
+Focus on one species.
+```{r}
+all_species <- obs %>% select(Species.Name) %>% distinct() %>% arrange(Species.Name) %>% pull()
+all_species
+
+obs_species <- obs %>% filter(Species.Name == "SABLEFISH (BLACKCOD)")
+```
+
+It looks like each Haul.Join denotes one row only, so no need to aggregate further for the hauls.
+
+Look at this in space? Then sum it all up for a species and compare with catch data from AKFIN. This last step will need aggregation by area, which we have in this dataset so that should be possible.
+```{r}
+obs_species_thin <- obs_species %>% select(Year,NMFS.Area,Gear.Description,Official.Total.Catch..mt.,Lat.DD.End,Lon.DD.End,X..Retained,Species.Name,Sample.Number:Extrapolated.Weight..kg.)
+
+glimpse(obs_species_thin)
+```
+
+Visualise in space.
+```{r}
+obs_species_thin_sf <- obs_species_thin %>% st_as_sf(coords = c(x = 'Lon.DD.End', y='Lat.DD.End'), crs=4326)
+
+obs_bbox <- obs_species_thin_sf %>% st_bbox()
+
+coast <- maps::map("worldHires", c("USA","Canada"), plot = FALSE, fill = TRUE)
+coast_sf <- coast %>% st_as_sf() #%>% st_transform(crs = atlantis_crs)
+
+# pick a year and view the data for that year
+obs_species_thin_sf %>% #filter(Year==2015) %>%
+  ggplot()+
+  geom_sf(aes(color=log1p(Extrapolated.Weight..kg.)))+
+  geom_sf(data = coast_sf)+
+  coord_sf(xlim = c(obs_bbox$xmin,obs_bbox$xmax), ylim = c(obs_bbox$ymin,obs_bbox$ymax))+
+  scale_color_viridis()+
+  theme_minimal()+
+  facet_wrap(~Year)+
+  labs(title = paste('Hauls from Observer data for',obs_species_thin_sf$Species.Name[1],sep = ' '))
+```
+
+At first glance, these do not cover all boxes. We need to look up sources for this and ask how the catch for other vessels is extrapolated.
+
+Read in catch data, and subset to the same years. Note that this is commercial catch, not catch from the bottom trawl surveys.
+```{r}
+catch <- read.csv("AKFIN/Catch/Groundfish Total Catch.csv", fileEncoding = 'UTF-8-BOM')
+
+catch_species <- catch %>% filter(Species.Group.Name == 'Pollock')
+catch_species <- catch_species %>% filter(Year %in% (obs_species_thin %>% select(Year) %>% distinct() %>% pull()))
+
+# remove discards
+catch_species <- catch_species %>% filter(Retained.Discarded=='Retained')
+```
+
+Add these up by year and area and see how they plot.
+```{r}
+obs_species_by_area <- obs_species_thin %>% group_by(Year,NMFS.Area) %>% summarise(Area.Catch.Obs = sum(Extrapolated.Weight..kg.))
+
+catch_species_by_area <- catch_species %>% group_by(Year,NMFS.Area) %>% summarise(Area.Catch.Catch = sum(Catch..mt.*1000))
+
+# join
+
+catch_comp <- obs_species_by_area %>% left_join(catch_species_by_area, by=c('Year','NMFS.Area'))
+
+catch_comp %>%
+  ggplot()+
+  geom_point(aes(x=Area.Catch.Catch,y=Area.Catch.Obs))+
+  geom_abline(intercept = 0,slope=1)+
+  theme_minimal()
+```
+Weak relationship, but not as straight-forward as summing up the observer data. The observer data seems to report lower catches than the catch data set. Need to read about this and see how the observer data feed into the catch data, if at all. As it stands, it looks like the observer data will not be too helpful in mapping catch data to individual boxes - not year by year. I also expect this to be variable between species.
+
+The catch data are from /Catch Accounting System. From [the CAS webpage](https://www.fisheries.noaa.gov/inport/item/21988), we read: *"The CAS uses a combination of industry reports and onboard observer information to provide an estimate of total catch and bycatch. Industry reported data consists of catch (landing reports) and processed product amounts (production reports), and these reports are electronically recorded and submitted to NMFS via eLandings. Other sources of information come from the Alaska Commercial Fisheries Entry Commission (CFEC), which issues permits and vessel licenses, and Vessel Monitoring Systems (VMS), which collect the position, time at a position, and course and speed of fishing vessels."*. Similarly, anout [BLEND](https://www.fisheries.noaa.gov/inport/item/11812): *"The Blend system used a combination of industry reports and observer data. For shoreside processors, Weekly Production Reports (WPR) submitted by industry were considered the best source of data for retained groundfish landings. All fish delivered to shoreside processors were weighed on scales, and these weights were used to account for retained catch. Observer data from catcher vessels provided the best data on at-sea discards of groundfish by vessels delivering to shoreside processors. Discard rates from these observer data were applied to the shoreside groundfish landings to estimate total at-sea discards from both observed and unobserved catcher vessels. For observed catcher/processors and motherships, the WPR and the Observer Reports recorded estimates of total catch (retained catch plus discards). If both reports were available, the Blend System selected one of them for incorporation into the catch database. If the vessel was unobserved, only the WPR was available."*.
+
+The way people go from observer data to catch data was described to me as a "black box", so not sure there is hope for us to cleanly convert between the two here. There seem to be a correlation between them, at least. We may try and run this functionally for all species and see of there is a correlation, and then simply apportion the catch from the "Catch By Fishery" data frame to the boxes (where possible) based on whatever little data we have from this observer database.
+
+Check gears.
+```{r}
+catch %>% select(Gear) %>% distinct() %>% pull()
+obs %>% select(Gear.Description) %>% distinct() %>% pull()
+```
+Gears have different nomenclatures and are therefore difficult to pair up.
+
+```{r}
+glimpse(catch)
+```
+```{r}
+glimpse(obs)
+```
+

@@ -1,0 +1,108 @@
+---
+title: "AKFIN catch data"
+author: "Alberto Rovellini"
+date: "8/3/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(sf)
+library(viridis)
+library(lubridate)
+```
+
+This document explores the catch data from AKFIN. It also explores the differences between Catch and Catch by Fishery data sets. 
+
+Both data sets come from the [Catch Data](https://akfinbi.psmfc.org/analytics/saw.dll?Dashboard&PortalPath=%2fshared%2fStock%20Assessment%2f_portal%2fStock%20Assessment&Page=Catch%20Data&Done=Dashboard%26PortalPath%3d%252fshared%252fStock%2520Assessment%252f_portal%252fStock%2520Assessment%26Page%3dGroundfish%2520Total%2520Catch%2520by%2520Fishery%26ViewState%3d4vmps7tab03fi787p32gt928p6) tab on AKFIN. Search details for each data set:
+
+1. [Groundfish Total Catch](https://akfinbi.psmfc.org/analytics/saw.dll?Dashboard&PortalPath=%2fshared%2fStock%20Assessment%2f_portal%2fStock%20Assessment&Page=Groundfish%20Total%20Catch&Done=Dashboard%26PortalPath%3d%252fshared%252fStock%2520Assessment%252f_portal%252fStock%2520Assessment%26Page%3dCatch%2520Data%26ViewState%3dg989ikgqgnk97vlvv3ut9e0s76). Report criteria:
+
+* Year: 1991-2021
+* FMP Area: GOA
+* FMP Subarea: --Select Value--
+* Gear: --Select Value--
+* Species Group: --Select Value--
+* Choose a Report: "Detail with Processor/Vessel Characteristics"
+
+2. [Groundfish Total Catch by Fishery](https://akfinbi.psmfc.org/analytics/saw.dll?Dashboard&PortalPath=%2fshared%2fStock%20Assessment%2f_portal%2fStock%20Assessment&Page=Groundfish%20Total%20Catch%20by%20Fishery&Done=Dashboard%26PortalPath%3d%252fshared%252fStock%2520Assessment%252f_portal%252fStock%2520Assessment%26Page%3dCatch%2520Data%26ViewState%3didnmhgqo8th0dfbdhbf798h6mi). Report criteria:
+
+* Year: 1991-2021 (but in 6-7 year chunks, or else the data export chokes)
+* Target Group: --Select Value--
+* Target Name: --Select Value--
+* FMP Area: GOA
+* FMP Subarea: --Select Value--
+* NMFS Area: --Select Value--
+* FMP Gear: --Select Value--
+* Species Group: --Select Value--
+* Species: --Select Value--
+* Choose a Report: "Detail with Processor/Vessel Characteristics"
+
+All exports from AKFIN are done as .csv.
+
+```{r}
+catch <- read.csv("AKFIN/Catch/Groundfish Total Catch.csv", fileEncoding = 'UTF-8-BOM')
+
+glimpse(catch)
+```
+
+What gears?
+```{r}
+all_gears <- catch %>% select(Gear) %>% distinct() %>% pull()
+all_gears
+```
+
+What species do we have this for?
+```{r}
+all_species <- catch %>% select(Species.Group.Name) %>% distinct() %>% arrange(Species.Group.Name) %>% pull() 
+all_species
+```
+
+Now read in the Catch By Fishery data. This takes substantially longer than the Catch data, perhaps because I chose the version with vessel detail for download.
+```{r}
+catch_byf <- read.csv("AKFIN/Catch/by_fisheries/Groundfish Total Catch by Fishery 2008-2014.csv", fileEncoding = 'UTF-8-BOM')
+
+glimpse(catch_byf)
+```
+
+This is detailed information on the catch of a species or species group (e.g. sharks) by vessel. Notably, this data seems to have information at week level. It may need to be downloaded and processed year-by-year because of the size of it. It will still not map to anything smaller than the subareas.
+
+Try for one species, see how this compares to the By Fishery data frame.
+```{r}
+species <- 'Atka Mackerel'
+
+catch_species <- catch %>% filter(Species.Group.Name==species)
+catch_species_byf <- catch_byf %>% filter(Species.Group==species)
+
+# subset to years that we have catch by species for - this will change when we get all the data we need
+catch_species <- catch_species %>% filter(Year %in% (catch_byf %>% select(Year) %>% distinct() %>% pull()))
+```
+
+```{r}
+catch_species_summary <- catch_species %>% group_by(Year,NMFS.Area) %>% summarise(catch_sp = sum(Catch..mt.))
+catch_species_byf_summary <- catch_species_byf %>% group_by(Year,NMFS.Area) %>% summarise(catch_sp_byf = sum(Catch..mt.))
+
+catch_join <- catch_species_summary %>% left_join(catch_species_byf_summary,by=c('Year','NMFS.Area'))
+```
+
+```{r}
+catch_join %>% ggplot()+
+  geom_point(aes(x=catch_sp,y =catch_sp_byf))+
+  geom_abline(intercept=0,slope=1)+
+  theme_minimal()
+```
+
+The By Species data seems to be more fine-grained / less aggregated. Also it is wekly data, which is great.
+
+Let's look more into the By Fishery data.
+```{r}
+glimpse(catch_byf)
+
+# how many months?
+levels(factor(month(ymd(catch_byf %>% select(Week.Ending.Date) %>% distinct() %>% pull())))) # data from all months
+```
+
