@@ -100,7 +100,18 @@ rbind(catch_overlap, other_overlap) %>%
   theme_bw()+
   facet_wrap(~Species)
 ```
-Some of "Other species bycatch" data appear in the catch by fishery. We will need to look manually what species are included in "Other".
+Looks like all the species in Other Bycatch are already reported in the catch by fishery data.
+```{r}
+p <- other %>% group_by(Year, Species.Common.Name) %>%
+  summarise(Catch_mt = sum(Weight.Posted..mt., na.rm = T)) %>%
+  ungroup() %>%
+  ggplot(aes(x = Year, y = Catch_mt))+
+  geom_line()+
+  theme_bw()+
+  facet_wrap(~Species.Common.Name, scales = 'free')
+p
+ggsave('../other.png', p, width = 8, height = 5)
+```
 
 What about the non-target species?
 ```{r}
@@ -131,7 +142,7 @@ rbind(catch_overlap, nontarget_overlap) %>%
 
 There is a lot more stuff in the ecosystem and nontarget species that does not appear in the total catch, including benthos and seabirds. What does that look like anyway?
 ```{r}
-nontarget %>%
+p <- nontarget %>%
   group_by(Year, Species.Group.Name) %>%
   summarise(Catch_mt = sum(Nontarget.Estimate..mt., na.rm = T),
             Catch_ind = sum(Nontarget.Species.Count..Sum., na.rm = T)) %>%
@@ -139,9 +150,11 @@ nontarget %>%
   ggplot(aes(x = Year, y = Catch_mt))+
   geom_line()+
   theme_bw()+
-  facet_wrap(~Species.Group.Name, scales = 'free')
+  facet_wrap(~Species.Group.Name, scales = 'free', ncol = 8)
+p
+ggsave('../nontarget.png', p, width = 16, height = 10)
 ```
-This is probably more extensive than what appears in the catch.
+There are more species here than in the catch by fishery data set. The pattern seems to be that anything in the FMP, including sculpins, octopus, sharks, skates, squids are best taken from the catch data. Anything else from the Non-target bycatch data. However, the latter only goes back to 2003, and not sure how to best approximate older removals.
 
 What about the prohibited species?
 ```{r}
@@ -170,4 +183,42 @@ rbind(catch_overlap, prohibited_overlap) %>%
 ```
 For halibut probably best use the prohibited set... And probably same for salmon etc.
 
-So all in all it does not sound like the Catch by Fishery dataset is good for everything. We should use that for all the FMP species, and other catch / bycatch datasets for everything else. 
+*Note: PSCNQ Estimate reported in metric tons for halibut and herring, counts of fish for crab and salmon
+```{r}
+p <- prohibited %>%
+  group_by(Year, Species.Group.Name) %>%
+  summarise(Catch_mt = sum(PSCNQ.Estimate...., na.rm = T)) %>%
+  ungroup() %>%
+  ggplot(aes(x = Year, y = Catch_mt))+
+  geom_line()+
+  theme_bw()+
+  facet_wrap(~Species.Group.Name, scales = 'free')
+p
+ggsave('../prohibited.png', p, width = 16, height = 10)
+```
+
+Halibut appears in different numbers in both data sets... perhaps IPHC would be the best place for halibut data. What about halibut in the catch data?
+```{r}
+catch_byf %>%
+  filter(Species.Group == 'Halibut') %>%
+  group_by(Retained.Discarded) %>%
+  summarise(Catch = sum(Catch..mt.))
+
+t <- catch_byf %>%
+  filter(Species.Group == 'Halibut', Retained.Discarded == 'Retained')
+
+catch_byf %>%
+  filter(Species.Group == 'Halibut', Retained.Discarded == 'Retained') %>%
+  group_by(Year) %>%
+  summarise(Catch = sum(Catch..mt.)) %>%
+  ggplot(aes(x = Year, y = Catch))+
+  geom_line()+
+  theme_bw()
+```
+
+A total of 57,000 mt of halibut was retained, from fisheries targeting halibut, sablefish, pacific cod, and rockfish. For some reason, in the catch by fishery dataset there is halibut data only since 2013. Use IPHC data for halibut.
+
+So all in all it does not sound like the Catch by Fishery dataset is good for everything. Summary:
+
+- All FMP, sharks, skates, octopus, squid, sculpins from Catch by Fishery (but not halibut)
+- Salmon bycatch 
