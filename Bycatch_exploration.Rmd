@@ -1,0 +1,173 @@
+---
+title: "Bycatch exploration"
+author: "Alberto Rovellini"
+date: "5/25/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(data.table)
+library(lubridate)
+```
+
+# Read data
+
+Read by-catch data from AKFIN Answers.
+
+1. FMP Other Species Bycatch . Details with Processor/Vessel Counts
+- Year: 1991 - 2022
+- FMP Area: GOA
+- FMP Subarea: --
+- Reporting Area Code: --
+- Gear Code: --
+- Trip Target Name: --
+- Species Common Name: --
+- Retained/Discarded: --
+
+2. Ecosystem Species Bycatch. Details with Processor/Vessel Counts
+- Year: 2003 - 2022 (2003 is the earliest)
+- FMP Area: GOA
+- FMP Subarea: --
+- NMFS Area: --
+- Gear: --
+- Target Fishery: --
+- Species Group Name: --
+
+3. Prohibited Species Catch. Detail with Processor/Vessel Characteristics
+- Year: 1991 - 2022
+- FMP Area: GOA
+- FMP Subarea: --
+- NMFS Area: --
+- Gear: --
+- Target Fishery: --
+- Species Group: --
+
+```{r}
+other <- read.csv('../data/AKFIN/Other_Species_Bycatch/FMP Other Species Bycatch CAS2.csv', fileEncoding = 'UTF-8-BOM')
+nontarget <- read.csv('../data/AKFIN/Nontarget_Ecosystem_Species_Bycatch/Nontarget Species Bycatch.csv', fileEncoding = 'UTF-8-BOM')
+prohibited <- read.csv('../data/AKFIN/Prohibited/Prohibited Species Catch.csv', fileEncoding = 'UTF-8-BOM')
+```
+
+Read in Catch by Fishery.
+```{r}
+all_files <- list.files('../data/AKFIN/Catch/by_fisheries/',full.names = TRUE)
+file_list <- lapply(all_files, read.csv,fileEncoding='UTF-8-BOM')
+catch_byf <- rbindlist(file_list)
+```
+
+What species does each data set deal with?
+
+```{r}
+species_other <- unique(other$Species.Group.Name)
+species_nontarget <- unique(nontarget$Species.Group.Name)
+species_prohibited <- unique(prohibited$Species.Group.Name)
+species_target <- unique(catch_byf$Species.Group)
+
+species_target_detailed <- unique(catch_byf$Species)
+
+intersect(species_target, species_other)
+intersect(species_target, species_nontarget)
+intersect(species_target, species_prohibited)
+```
+
+The catch data set has some overlap with all 3 the Fishing Impact data sets. How do we avoid double-counting?
+```{r}
+other_overlap <- other %>% 
+  filter(Species.Group.Name %in% intersect(species_target, species_other)) %>%
+  group_by(Year, Species.Group.Name) %>%
+  summarise(Catch = sum(Weight.Posted..mt., na.rm = T)) %>%
+  ungroup() %>%
+  mutate(Set = 'Other') %>%
+  set_names(c('Year', 'Species', 'Catch', 'Set'))
+
+catch_overlap <- catch_byf %>% 
+  filter(Species.Group %in% intersect(species_target, species_other)) %>%
+  group_by(Year, Species.Group) %>%
+  summarise(Catch = sum(Catch..mt., na.rm = T)) %>%
+  ungroup() %>%
+  mutate(Set = 'Catch') %>%
+  set_names(c('Year', 'Species', 'Catch', 'Set'))
+
+rbind(catch_overlap, other_overlap) %>%
+  #filter(Set == 'Catch') %>%
+  ggplot(aes(x = Year, y = Catch, color = Set))+
+  geom_line()+
+  theme_bw()+
+  facet_wrap(~Species)
+```
+Some of "Other species bycatch" data appear in the catch by fishery. We will need to look manually what species are included in "Other".
+
+What about the non-target species?
+```{r}
+nontarget_overlap <- nontarget %>% 
+  filter(Species.Group.Name %in% intersect(species_target, species_nontarget)) %>%
+  group_by(Year, Species.Group.Name) %>%
+  summarise(Catch = sum(Nontarget.Estimate..mt., na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(Set = 'Nontarget') %>%
+  set_names(c('Year', 'Species', 'Catch', 'Set'))
+
+catch_overlap <- catch_byf %>% 
+  filter(Species.Group %in% intersect(species_target, species_nontarget)) %>%
+  group_by(Year, Species.Group) %>%
+  summarise(Catch = sum(Catch..mt., na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(Set = 'Catch') %>%
+  set_names(c('Year', 'Species', 'Catch', 'Set'))
+
+rbind(catch_overlap, nontarget_overlap) %>%
+  # filter(Set == 'Nontarget') %>%
+  ggplot(aes(x = Year, y = Catch, color = Set))+
+  geom_line()+
+  theme_bw()+
+  facet_wrap(~Species)
+
+```
+
+There is a lot more stuff in the ecosystem and nontarget species that does not appear in the total catch, including benthos and seabirds. What does that look like anyway?
+```{r}
+nontarget %>%
+  group_by(Year, Species.Group.Name) %>%
+  summarise(Catch_mt = sum(Nontarget.Estimate..mt., na.rm = T),
+            Catch_ind = sum(Nontarget.Species.Count..Sum., na.rm = T)) %>%
+  ungroup() %>%
+  ggplot(aes(x = Year, y = Catch_mt))+
+  geom_line()+
+  theme_bw()+
+  facet_wrap(~Species.Group.Name, scales = 'free')
+```
+This is probably more extensive than what appears in the catch.
+
+What about the prohibited species?
+```{r}
+prohibited_overlap <- prohibited %>% 
+  filter(Species.Group.Name %in% intersect(species_target, species_prohibited)) %>%
+  group_by(Year, Species.Group.Name) %>%
+  summarise(Catch = sum(PSCNQ.Estimate...., na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(Set = 'Prohibited') %>%
+  set_names(c('Year', 'Species', 'Catch', 'Set'))
+
+catch_overlap <- catch_byf %>% 
+  filter(Species.Group %in% intersect(species_target, species_prohibited)) %>%
+  group_by(Year, Species.Group) %>%
+  summarise(Catch = sum(Catch..mt., na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(Set = 'Catch') %>%
+  set_names(c('Year', 'Species', 'Catch', 'Set'))
+
+rbind(catch_overlap, prohibited_overlap) %>%
+  #filter(Set == 'Catch') %>%
+  ggplot(aes(x = Year, y = Catch, color = Set))+
+  geom_line()+
+  theme_bw()+
+  facet_wrap(~Species)
+```
+For halibut probably best use the prohibited set... And probably same for salmon etc.
+
+So all in all it does not sound like the Catch by Fishery dataset is good for everything. We should use that for all the FMP species, and other catch / bycatch datasets for everything else. 
