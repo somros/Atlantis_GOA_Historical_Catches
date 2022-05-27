@@ -165,42 +165,36 @@ all_catch <- rbindlist(lapply(all_fg, decompose_catch, catch_frame = catch_dfo_f
 # make time series plots to visualize this and to compare with original data
 
 all_catch %>%
-  filter(Code == 'COD') %>%
-  mutate(Year = year(Date), Month = month(Date)) %>%
-  full_join(all_dates, by = c('Year', 'Month')) %>%
-  group_by(Year, Month, Code) %>%
+  filter(Code == 'POL') %>%
+  mutate(Year = year(Date)) %>%
+  group_by(Year, Code) %>%
   summarise(Catch_mt = sum(Catch_box_day_mgs * 5.7 * 20 * 60 * 60 * 24 / 1e9)) %>%
   ungroup() %>%
-  mutate(Date = make_date(year = Year, month = Month)) %>%
   left_join(atlantis_fg %>% select(Code, Name), by = 'Code') %>%
-  ggplot(aes(x = Date, y = Catch_mt))+
+  ggplot(aes(x = Year, y = Catch_mt))+
   geom_line()+
   theme_bw()+
   labs(title = 'From catch.ts')
 
-catch_byf %>%
-  filter(Species.Group == 'Pacific Cod') %>%
-  select(Week.Ending.Date, Catch..mt.) %>%
-  mutate(Year = year(Week.Ending.Date),
-         Month = month(Week.Ending.Date)) %>%
-  group_by(Year, Month) %>%
-  summarise(Catch_mt = sum(Catch..mt.)) %>%
+catch_dfo %>%
+  filter(species_common_name == 'walleye pollock') %>%
+  filter(AREA %in% c('5B','5C','5D','5E')) %>%
+  group_by(year) %>%
+  summarize(catch_kg = sum(catch_kg, na.rm = T)) %>%
   ungroup() %>%
-  mutate(Date = make_date(year = Year, month = Month)) %>%
-  ggplot(aes(x = Date, y = Catch_mt))+
+  select(year, catch_kg) %>%
+  ggplot(aes(x = year, y = catch_kg/1000))+
   geom_line()+
   theme_bw()+
-  labs(title = 'From AKFIN')
+  labs(title = 'From DFO')
 
 # make one for plots to show, by year 
 all_catch %>%
   filter(Code %in% c('COD', 'ATF', 'POL' , 'POP', 'SBF', 'FHS', 'REX', 'FFS', 'FFD', 'RFS', 'RFP', 'RFD', 'THO')) %>%
-  mutate(Year = year(Date), Month = month(Date)) %>%
-  full_join(all_dates, by = c('Year', 'Month')) %>%
+  mutate(Year = year(Date)) %>%
   group_by(Year, Code) %>%
   summarise(Catch_mt = sum(Catch_box_day_mgs * 5.7 * 20 * 60 * 60 * 24 / 1e9)) %>%
   ungroup() %>%
-  #mutate(Date = make_date(year = Year, month = Month)) %>%
   left_join(atlantis_fg %>% select(Code, Name), by = 'Code') %>%
   ggplot(aes(x = Year, y = Catch_mt, fill = Name))+
   geom_area()+
@@ -213,7 +207,7 @@ all_catch %>%
 # however, we will have to add a lot of species here
 
 #remove all existing files first
-all_files <- list.files('../output', full.names = T)
+all_files <- list.files('../output/DFO', full.names = T)
 lapply(all_files, file.remove)
 
 for(b in 1:length(unique(all_catch$box_id))){
@@ -239,7 +233,7 @@ for(b in 1:length(unique(all_catch$box_id))){
   ttt <- tt %>% pivot_wider(names_from = Code, values_from = Catch_box_day_mgs)
   
   # make header
-  header_file <- paste0('../output/catch', this_box, '.ts')
+  header_file <- paste0('../output/DFO/catch', this_box, '.ts')
   
   cat(paste("# Historical catch time series file for Atlantis GOA box", this_box, ", years 1991-2020\n", sep = " "), file = header_file, append = T)
   cat("#\n", file = header_file, append = T)
