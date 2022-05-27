@@ -29,7 +29,8 @@ s <- read.csv('../data/seasonal_distributions/seasonal_distribution.csv')
 s_inv <- read.csv('../data/seasonal_distributions/seasonal_distribution_inverts.csv')
 
 # group file
-atlantis_fg <- read.csv('../data/GOA_Groups.csv', header = T)
+atlantis_fg <- read.csv('../data/GOA_Groups.csv', header = T) %>%
+  filter(IsImpacted == 1)
 
 # A key from species to Atlantis group
 catch_byf %>% select(Species.Group, Species) %>% distinct() %>% write.csv('../data/species_key.csv', row.names = F)
@@ -41,7 +42,7 @@ atlantis_bgm <- read_bgm('../data/GOA_WGS84_V4_final.bgm')
 atlantis_pts <- atlantis_bgm %>% 
   box_sf() %>%
   st_set_geometry(NULL) %>%
-  select(box_id, insideX, insideY, boundary) %>%
+  select(box_id, insideX, insideY, boundary, botz) %>%
   st_as_sf(coords = c('insideX', 'insideY'), crs = atlantis_bgm$extra$projection)
 
 nmfs_sf <- st_read("../data/gf95_nmfs/gf95_nmfs.shp")
@@ -53,8 +54,8 @@ nmfs_sf <- nmfs_sf %>%
 nmfs_sf %>% ggplot()+geom_sf()+geom_sf_label(aes(label = NMFS_AREA))
 
 area_key <- st_join(atlantis_pts, (nmfs_sf %>% select(NMFS_AREA))) %>%
-  mutate(NMFS_AREA = ifelse(boundary == TRUE, NA, NMFS_AREA)) %>%
-  filter(box_id < 92 | box_id == 94) # keep only boxes within the US
+  mutate(NMFS_AREA = ifelse(boundary == TRUE | botz == 0, NA, NMFS_AREA)) %>%
+  filter(box_id < 92) # keep only boxes within the US
   
 # Aggregate species catch to Atlantis groups based on key
 catch_fg <- catch_byf %>% 
@@ -74,12 +75,12 @@ all_fg <- catch_fg %>% pull(Atlantis_fg) %>% unique()
 # build a complete time series with all months and NMFS areas
 all_years <- unique(year(catch_fg$Month.Year))
 all_months <- 1:12
-all_dates <- list()
-
-all_dates <- data.frame(expand.grid(all_years, all_months)) %>%
-  arrange(Var1, Var2) %>%
-  mutate(Month.Year = make_date(Var1, Var2)) %>%
-  pull(Month.Year)
+# all_dates <- list()
+# 
+# all_dates <- data.frame(expand.grid(all_years, all_months)) %>%
+#   arrange(Var1, Var2) %>%
+#   mutate(Month.Year = make_date(Var1, Var2)) %>%
+#   pull(Month.Year)
 
 all_areas <- catch_fg %>% pull(NMFS.Area) %>% unique()
 
@@ -246,7 +247,7 @@ for(b in 1:length(unique(all_catch$box_id))){
   ttt <- tt %>% pivot_wider(names_from = Code, values_from = Catch_box_day_mgs)
   
   # make header
-  header_file <- paste0('../output/catch', this_box, '.ts')
+  header_file <- paste0('../output/AKFIN/catch', this_box, '.ts')
   
   cat(paste("# Historical catch time series file for Atlantis GOA box", this_box, ", years 1991-2020\n", sep = " "), file = header_file, append = T)
   cat("#\n", file = header_file, append = T)
