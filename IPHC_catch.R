@@ -13,6 +13,12 @@ incidental_iphc <- read.csv('../data/Halibut/incidental.csv', check.names = F) #
 # areas
 iphc_areas <- read_sf('../data/Halibut/iphc-geospatial-regulatoryareas/IPHC_RegulatoryAreas_PDC.shp')
 
+# spatial distributions
+dists <- read.csv('../data/seasonal_distributions/seasonal_distribution.csv')
+dists <- dists %>% 
+  select('Halibut_A_S3') %>%
+  mutate(box_id = 0:(nrow(.)-1))
+
 # atlantis geometry
 atlantis_bgm <- read_bgm('../data/GOA_WGS84_V4_final.bgm')
 atlantis_box <- atlantis_bgm %>% box_sf()
@@ -26,6 +32,27 @@ atlantis_box %>%
   geom_sf(data = (iphc_areas %>% filter(ET_ID %in% c('2B','2C','3A','3B','4A'))), fill = NA)+
   geom_sf_label(data = (iphc_areas %>% filter(ET_ID %in% c('2B','2C','3A','3B','4A'))), aes(label = ET_ID))
 
+# look at the areas alone
+iphc_areas %>%
+  filter(ET_ID %in% c('2B','2C')) %>%
+  ggplot()+
+  geom_sf(fill = NA)
+
+# Assigning Atlantis boxes to IPHC areas ----------------------------------
+
+# Doing this based on the inside points, because the overlap between IPHC areas and Atlantis geometry is imperfect
+atlantis_iphc_key <- atlantis_box %>%
+  select(box_id, insideX, insideY) %>%
+  st_set_geometry(NULL) %>%
+  st_as_sf(coords = c('insideX','insideY'), crs = atlantis_bgm$extra$projection) %>%
+  st_join(iphc_areas %>% select(ET_ID)) %>%
+  filter(!(box_id %in% c(94, 97) & ET_ID == '2C')) # boxes 94 and 97 (small, one boundary) fall right in the overlap between 2B and 2C - assigning them to the larger 2B (will hardly matter)
+
+# Proportions of areas 2B and 4A overlapping with Atlantis GOA ------------
+# For areas 2B and 4A, we assign the catch to the Atlantis domain based on the proportion of total biomass caught in FISS surveys
+
+# Area 4A
+
 # read in FISS data
 fiss_data <- read.csv('../data/Halibut/FISS/fiss_cleaned_09222021.csv')
 
@@ -34,8 +61,6 @@ fiss_data <- fiss_data %>%
   distinct() %>%
   st_as_sf(coords = c('START_LON', 'START_LAT'), crs = 4326) %>%
   st_transform(crs = atlantis_bgm$extra$projection)
-
-# Area 4A: proportion of total biomass caught in FISS surveys
 
 # proportion of Atlantis geometry within IPHC area 4A
 atlantis_4a <- atlantis_box %>% 
@@ -70,9 +95,8 @@ prop_4a <- biom_4a %>%
 
 ggplot()+geom_sf(data = fiss_atlantis)+geom_sf(data = atlantis_4a, fill = NA)
 
-# Area 2B: proportion of total biomass caught in FISS surveys
+# Area 2B
 
-# proportion of Atlantis geometry within IPHC area 2B
 atlantis_2b <- atlantis_box %>% 
   st_union() %>%
   st_intersection((iphc_areas %>% filter(ET_ID == '2B'))) %>%
@@ -104,4 +128,6 @@ prop_2b <- biom_2b %>%
   select(SURVEY_YEAR, Prop)
 
 ggplot()+geom_sf(data = fiss_atlantis)+geom_sf(data = atlantis_2b, fill = NA)
+
+
 
