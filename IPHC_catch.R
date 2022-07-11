@@ -5,6 +5,7 @@ library(tidyverse)
 library(readxl)
 library(rbgm)
 library(sf)
+library(lubridate)
 
 select <- dplyr::select
 
@@ -23,7 +24,7 @@ dists <- dists %>%
 atlantis_bgm <- read_bgm('../data/GOA_WGS84_V4_final.bgm')
 atlantis_box <- atlantis_bgm %>% box_sf()
 
-# areas 4A and 2B will be part out the model domain. How do we allocate? Just by proportion of the area is likely inaccurate
+# areas 4A and 2B will be part out the model domain
 iphc_areas <- iphc_areas %>% st_transform(crs = atlantis_bgm$extra$projection)
 
 atlantis_box %>% 
@@ -129,5 +130,66 @@ prop_2b <- biom_2b %>%
 
 ggplot()+geom_sf(data = fiss_atlantis)+geom_sf(data = atlantis_2b, fill = NA)
 
+# expand to missing years
+years_fiss <- prop_4a %>% pull(SURVEY_YEAR)
+years_catch <- catch_iphc %>% pull(Year1) %>% unique()
 
+setdiff(years_catch, years_fiss) # need to add years before 1998 and 2020
+# assume the proportion of biomass inside the Atlantis area was constant 1991-1998 and 2019-2020
+prop_4a_1 <- rbind(data.frame(SURVEY_YEAR = 1991:1997, Prop = rep(prop_4a[prop_4a$SURVEY_YEAR == 1998,]$Prop,7)),
+                 prop_4a,
+                 data.frame(SURVEY_YEAR = 2020, Prop = prop_4a[prop_4a$SURVEY_YEAR == 2019,]$Prop))
 
+prop_2b_1 <- rbind(data.frame(SURVEY_YEAR = 1991:1997, Prop = rep(prop_2b[prop_2b$SURVEY_YEAR == 1998,]$Prop,7)),
+                 prop_2b,
+                 data.frame(SURVEY_YEAR = 2020, Prop = prop_2b[prop_2b$SURVEY_YEAR == 2019,]$Prop))
+
+prop_long <- prop_4a_1 %>%
+  left_join(prop_2b_1, by = 'SURVEY_YEAR') %>%
+  set_names(c('year','2B','4A')) %>%
+  pivot_longer(-year, names_to = 'area', values_to = 'prop')
+
+# Allocate catch to Atlantis box --------------------------------------------
+# Doing this based on summer biomass distribution S3
+
+# Correct catch of areas 2B and 4A based on proportions
+t <- catch_iphc %>%
+  set_names(c('year','area','stat_area','catch_mt','vessels')) %>%
+  filter(area %in% c('2B','2C','3A','3B','4A')) %>%
+  select(year,area,catch_mt) %>%
+  group_by(year, area) %>% # this step becomes necessary because we are dropping the statistical areas
+  summarise(catch_mt = sum(catch_mt)) %>%
+  ungroup() %>%
+  left_join(prop_long, by = c('year','area')) %>%
+  rowwise() %>%
+  mutate(catch_mt_1 = ifelse(is.na(prop), catch_mt, catch_mt * prop)) %>%
+  ungroup() %>%
+  select(-catch_mt, -prop)
+
+# Allocate catch per area per year to each box
+# What do we do with catch that is taken from boundary boxes? Default behavior to allocate that to other boxes in the IPHC area
+t1 <- atlantis_iphc_key %>%
+  st_set_geometry(NULL) %>%
+  rename(area = ET_ID) %>%
+  full_join(t, by = 'area') %>%
+  left_join(dists, by = 'box_id') %>%
+  rename(s = Halibut_A_S3) %>%
+  group_by(year, area) %>%
+  mutate(sum_s_by_area = sum(s), # Allocate proportion of biomass S3
+         catch_mt_box = catch_mt_1 * s / sum_s_by_area) %>% # Grouping by IPHC area, break down catch based on S3
+  ungroup() %>%
+  select(year, box_id, catch_mt_box)
+
+# Convert catch in mt/y into catch per day in mg N s-1
+all_dates <- data.frame('Date' = seq(as.Date('1991-01-01'), as.Date('2020-12-31'), by = 'days')) %>%
+  mutate(year = year(Date), month = month(Date), day = day(Date))
+
+t2 <- t1 %>%
+  full_join(all_dates, by = 'year') %>%
+  group_by(year, box_id) %>%
+  mutate(month_day = paste(month, day, sep = '_'),
+         catch_box_day_mt = catch_mt_box / length(month_day),
+         catch_box_day_mgs = catch_box_day_mt * 1e9 / (60*60*24) / (20 * 5.7)) %>%
+  ungroup()
+
+# Write Halibut catch to existing catch.ts files --------------------------
