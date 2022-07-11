@@ -9,8 +9,8 @@ library(lubridate)
 
 select <- dplyr::select
 
-catch_iphc <- read_xlsx('../data/Halibut/iphc-2021-tsd-026.xlsx', sheet = 1, range = 'A3:E2635') #mt
-incidental_iphc <- read.csv('../data/Halibut/incidental.csv', check.names = F) #mt
+catch_iphc <- read_xlsx('../data/Halibut/iphc-2021-tsd-026.xlsx', sheet = 1, range = 'A3:E2635') #mt https://www.iphc.int/datatest/commercial-fisheries
+incidental_iphc <- read.csv('../data/Halibut/incidental.csv', check.names = F) #mt https://iphc.int/data/datatest/non-directed-commercial-discard-mortality-fisheries
 # areas
 iphc_areas <- read_sf('../data/Halibut/iphc-geospatial-regulatoryareas/IPHC_RegulatoryAreas_PDC.shp')
 
@@ -27,17 +27,17 @@ atlantis_box <- atlantis_bgm %>% box_sf()
 # areas 4A and 2B will be part out the model domain
 iphc_areas <- iphc_areas %>% st_transform(crs = atlantis_bgm$extra$projection)
 
-atlantis_box %>% 
-  ggplot()+
-  geom_sf(fill = NA)+
-  geom_sf(data = (iphc_areas %>% filter(ET_ID %in% c('2B','2C','3A','3B','4A'))), fill = NA)+
-  geom_sf_label(data = (iphc_areas %>% filter(ET_ID %in% c('2B','2C','3A','3B','4A'))), aes(label = ET_ID))
+# atlantis_box %>% 
+#   ggplot()+
+#   geom_sf(fill = NA)+
+#   geom_sf(data = (iphc_areas %>% filter(ET_ID %in% c('2B','2C','3A','3B','4A'))), fill = NA)+
+#   geom_sf_label(data = (iphc_areas %>% filter(ET_ID %in% c('2B','2C','3A','3B','4A'))), aes(label = ET_ID))
 
-# look at the areas alone
-iphc_areas %>%
-  filter(ET_ID %in% c('2B','2C')) %>%
-  ggplot()+
-  geom_sf(fill = NA)
+# # look at the areas alone
+# iphc_areas %>%
+#   filter(ET_ID %in% c('2B','2C')) %>%
+#   ggplot()+
+#   geom_sf(fill = NA)
 
 # Assigning Atlantis boxes to IPHC areas ----------------------------------
 
@@ -94,7 +94,7 @@ prop_4a <- biom_4a %>%
   mutate(Prop = TOT.y / TOT.x) %>%
   select(SURVEY_YEAR, Prop)
 
-ggplot()+geom_sf(data = fiss_atlantis)+geom_sf(data = atlantis_4a, fill = NA)
+# ggplot()+geom_sf(data = fiss_atlantis)+geom_sf(data = atlantis_4a, fill = NA)
 
 # Area 2B
 
@@ -128,7 +128,7 @@ prop_2b <- biom_2b %>%
   mutate(Prop = TOT.y / TOT.x) %>%
   select(SURVEY_YEAR, Prop)
 
-ggplot()+geom_sf(data = fiss_atlantis)+geom_sf(data = atlantis_2b, fill = NA)
+# ggplot()+geom_sf(data = fiss_atlantis)+geom_sf(data = atlantis_2b, fill = NA)
 
 # expand to missing years
 years_fiss <- prop_4a %>% pull(SURVEY_YEAR)
@@ -149,17 +149,47 @@ prop_long <- prop_4a_1 %>%
   set_names(c('year','2B','4A')) %>%
   pivot_longer(-year, names_to = 'area', values_to = 'prop')
 
-# Allocate catch to Atlantis box --------------------------------------------
-# Doing this based on summer biomass distribution S3
 
-# Correct catch of areas 2B and 4A based on proportions
-t <- catch_iphc %>%
+# Bring in incidental catch -----------------------------------------------
+# area 4 gets broken into subareas in 2006 in this dataset... so approximate the proportion in 4A to area 4 on average for the years we have data for and break down the catch from 4 for years prior to 2006
+
+incidental_iphc_1 <- incidental_iphc %>%
+  select(Year, `2B`, `2C`, `3A`, `3B`, `4A`, `4B`, `4CDE+CA`, `4`) %>%
+  rowwise() %>%
+  mutate(`4` = ifelse(is.na(`4`), `4A`+`4B`+`4CDE+CA`, `4`)) %>%
+  ungroup()
+
+A_to_4 <- incidental_iphc_1 %>%
+  mutate(prop_a = `4A` / `4`) %>%
+  pull(prop_a) %>%
+  mean(na.rm = T)
+
+incidental_iphc_1 <- incidental_iphc_1 %>%
+  rowwise() %>%
+  mutate(`4A` = ifelse(is.na(`4A`), `4` * A_to_4, `4A`)) %>%
+  ungroup() %>%
+  select(Year:`4A`) %>%
+  pivot_longer(-Year, names_to = 'area', values_to = 'catch_mt') %>%
+  rename(year = Year)
+
+# add incidental catch to total catch
+catch_iphc_tot <- catch_iphc %>%
   set_names(c('year','area','stat_area','catch_mt','vessels')) %>%
   filter(area %in% c('2B','2C','3A','3B','4A')) %>%
   select(year,area,catch_mt) %>%
   group_by(year, area) %>% # this step becomes necessary because we are dropping the statistical areas
   summarise(catch_mt = sum(catch_mt)) %>%
   ungroup() %>%
+  full_join(incidental_iphc_1, by = c('year','area')) %>%
+  mutate(catch_mt.y = replace_na(catch_mt.y, 0),
+         catch_mt = catch_mt.x + catch_mt.y) %>%
+  select(-catch_mt.x, -catch_mt.y)
+  
+# Allocate catch to Atlantis box --------------------------------------------
+# Doing this based on summer biomass distribution S3
+
+# Correct catch of areas 2B and 4A based on proportions
+t <- catch_iphc_tot %>%
   left_join(prop_long, by = c('year','area')) %>%
   rowwise() %>%
   mutate(catch_mt_1 = ifelse(is.na(prop), catch_mt, catch_mt * prop)) %>%
@@ -190,6 +220,60 @@ t2 <- t1 %>%
   mutate(month_day = paste(month, day, sep = '_'),
          catch_box_day_mt = catch_mt_box / length(month_day),
          catch_box_day_mgs = catch_box_day_mt * 1e9 / (60*60*24) / (20 * 5.7)) %>%
-  ungroup()
+  ungroup() %>%
+  filter(day == 1) %>%
+  select(Date, box_id, catch_box_day_mgs)
 
 # Write Halibut catch to existing catch.ts files --------------------------
+
+all_boxes <- t2 %>% pull(box_id) %>% unique()
+
+for(b in 1:length(all_boxes)){
+  
+  this_box <- all_boxes[b]
+  
+  if(this_box < 92){
+    
+    details <- file.info(list.files('../output/AKFIN/', full.names = T))
+    details <- details[with(details, order(as.POSIXct(mtime))), ]
+    files <- rownames(details)
+    
+    this_file <- read.table(files[b], skip = 309)
+    
+    this_hal <- t2 %>% filter(box_id == this_box)
+    
+    # replace HAL in the original 
+    this_file$V22 <- this_hal$catch_box_day_mgs
+    
+    # make header
+    header_file <- paste0('../output/AKFIN/catch', this_box, '.ts')
+    # write header lines
+    writeLines(readLines(files[b], n = 309), con = header_file)
+    # write table body
+    write.table(this_file, file = header_file, append = T, sep = " ", row.names = FALSE, col.names = FALSE)
+    
+  } else {
+    
+    details <- file.info(list.files('../output/DFO/', full.names = T))
+    details <- details[with(details, order(as.POSIXct(mtime))), ]
+    files <- rownames(details)
+    
+    b <- b - 92 # modify b to correctly index from the DFO folder
+    
+    this_file <- read.table(files[b], skip = 309)
+    
+    this_hal <- t2 %>% filter(box_id == this_box)
+    
+    # replace HAL in the original 
+    this_file$V22 <- this_hal$catch_box_day_mgs
+    
+    # make header
+    header_file <- paste0('../output/DFO/catch', this_box, '.ts')
+    # write header lines
+    writeLines(readLines(files[b], n = 309), con = header_file)
+    # write table body
+    write.table(this_file, file = header_file, append = T, sep = " ", row.names = FALSE, col.names = FALSE)
+    
+  }
+  
+}
