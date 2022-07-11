@@ -3,6 +3,9 @@ library(lubridate)
 library(data.table)
 library(rbgm)
 library(sf)
+library(RColorBrewer)
+library(viridis)
+
 
 select <- dplyr::select
 
@@ -30,7 +33,7 @@ s_inv <- read.csv('../data/seasonal_distributions/seasonal_distribution_inverts.
 
 # group file
 atlantis_fg <- read.csv('../data/GOA_Groups.csv', header = T) %>%
-  filter(IsImpacted == 1)
+  filter(IsImpacted == 1) # only keep groups that are marked as IsImpacted by fisheries in the group.csv file
 
 # A key from species to Atlantis group
 catch_byf %>% select(Species.Group, Species) %>% distinct() %>% write.csv('../data/species_key.csv', row.names = F)
@@ -75,12 +78,12 @@ all_fg <- catch_fg %>% pull(Atlantis_fg) %>% unique()
 # build a complete time series with all months and NMFS areas
 all_years <- unique(year(catch_fg$Month.Year))
 all_months <- 1:12
-# all_dates <- list()
+all_dates <- list()
 # 
-# all_dates <- data.frame(expand.grid(all_years, all_months)) %>%
-#   arrange(Var1, Var2) %>%
-#   mutate(Month.Year = make_date(Var1, Var2)) %>%
-#   pull(Month.Year)
+all_dates <- data.frame(expand.grid(all_years, all_months)) %>%
+  arrange(Var1, Var2) %>%
+  mutate(Month.Year = make_date(Var1, Var2)) %>%
+  pull(Month.Year)
 
 all_areas <- catch_fg %>% pull(NMFS.Area) %>% unique()
 
@@ -201,19 +204,44 @@ catch_byf %>%
   labs(title = 'From AKFIN')
 
 # make one for plots to show, by year 
+# this is for ESSAS
+tier3_key <- data.frame(species = 
+                          c("Pollock",
+                            "Pacific cod",
+                            "Sablefish",
+                            "Northern and Southern rock sole",
+                            "Flathead sole",
+                            "Dover",
+                            "Northern Rockfish",
+                            "POP",
+                            "Dusky rockfish",
+                            "Rougheye Blackspotted rockfish",
+                            "Rex Sole",
+                            "Arrowtooth flounder"),
+                        Code = 
+                          c('POL','COD','SBF','FFS','FHS','FFD','RFS','POP','RFP','RFD','REX','ATF'))
+
+these_species <- tier3_key$Code
+colourCount = length(these_species)
+getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+
 all_catch %>%
-  filter(Code %in% c('COD', 'ATF', 'POL' , 'POP', 'SBF', 'FHS', 'REX', 'FFS', 'FFD', 'RFS', 'RFP', 'RFD', 'THO')) %>%
+  filter(Code %in% these_species) %>%
+  # filter(Code == 'POL') %>%
   mutate(Year = year(Date), Month = month(Date)) %>%
   full_join(all_dates, by = c('Year', 'Month')) %>%
   group_by(Year, Code) %>%
   summarise(Catch_mt = sum(Catch_box_day_mgs * 5.7 * 20 * 60 * 60 * 24 / 1e9)) %>%
   ungroup() %>%
   #mutate(Date = make_date(year = Year, month = Month)) %>%
-  left_join(atlantis_fg %>% select(Code, Name), by = 'Code') %>%
-  ggplot(aes(x = Year, y = Catch_mt, fill = Name))+
+  left_join(tier3_key, by = 'Code') %>%
+  ggplot(aes(x = Year, y = Catch_mt, fill = species))+
   geom_area()+
+  scale_fill_manual(values=getPalette(colourCount))+
+  scale_colour_manual(values=getPalette(colourCount))+
+  scale_x_continuous(breaks = seq(1990,2020,5))+
   theme_bw()+
-  labs(x = 'Year', y = 'Catch (mt)')
+  labs(x = 'Year', y = 'Catch (mt)', fill = '', title = 'Catch in the Gulf of Alaska')
 
 # Write catch.ts file -----------------------------------------------------
 
@@ -274,3 +302,47 @@ for(b in 1:length(unique(all_catch$box_id))){
   
   write.table(ttt, file = header_file, append = T, sep = " ", row.names = FALSE, col.names = FALSE)
 }
+
+
+
+# Plot for ESSAS ----------------------------------------------------------
+
+library(gifski)
+
+atlantis_box <- atlantis_bgm %>% box_sf() %>% select(box_id)
+
+catch_pol <- all_catch %>% 
+  filter(Code == 'POL') %>%
+  mutate(Catch_mt = Catch_box_day_mgs * 5.7 * 20 * 60 * 60 * 24 / 1e9,
+         Year = year(Date),
+         Month = month(Date)) %>%
+  group_by(box_id, Year, Month) %>%
+  summarise(Catch = sum(Catch_mt)) %>%
+  ungroup() 
+
+catch_pol <- atlantis_box %>% left_join(catch_pol, by = 'box_id') %>% filter(!is.na(Year))
+
+all_years <- unique(catch_pol$Year)
+all_months <- unique(catch_pol$Month)
+
+for(y in 1:length(all_years)){
+  for(m in 1:length(all_months)){
+    
+    p <- catch_pol %>%
+      filter(Year == all_years[y], Month == all_months[m]) %>%
+      ggplot()+
+      geom_sf(aes(fill = log1p(Catch), color = NULL))+
+      scale_fill_viridis(limits = c(0, 6))+
+      theme_bw()+
+      labs(title = paste('Walleye pollock GOA catch in', all_years[y], '-',  all_months[m]), fill = 'Log catch (mt)')
+    
+    ggsave(paste0('../output/GIF/',all_years[y],'-',all_months[m],'.png'), p, width = 9, height = 4, dpi = 300)
+    
+  }
+}
+
+details = file.info(list.files(path='../output/GIF/', pattern = '*.png', full.names = TRUE))
+details = details[with(details, order(as.POSIXct(mtime))), ]
+files = rownames(details)
+
+gifski(files, gif_file = "animation.gif", width = 900, height = 400, delay = 0.2)
