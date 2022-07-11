@@ -14,7 +14,11 @@ select <- dplyr::select
 
 #read data
 catch_dfo <- readRDS('../data/DFO/goa-clim-bc-groundfish-2020.rds') # dfo catch data
-atlantis_fg <- read.csv('../data/GOA_Groups.csv') #%>% select(Code, Name) #functional groups
+# group file
+atlantis_fg <- read.csv('../data/GOA_Groups.csv', header = T) %>%
+  filter(IsImpacted == 1) # only keep groups that are marked as IsImpacted by fisheries in the group.csv file
+
+# BGM and spatial
 atlantis_bgm <- read_bgm('../data/GOA_WGS84_V4_final.bgm') # bgm
 atlantis_box <- atlantis_bgm %>% box_sf()
 dfo_sf <- read_sf('../data/DFO_management_areas/BCMajorAreas/Major.shp') # DFO areas
@@ -22,7 +26,6 @@ s <- read.csv('../data/seasonal_distributions/seasonal_distribution.csv') # Seas
 s_inv <- read.csv('../data/seasonal_distributions/seasonal_distribution_inverts.csv') # Seasonal distributions S1-S4
 
 # make a species to FG key, based on previous work
-
 write.csv(data.frame('cn' = unique(catch_dfo$species_common_name), 
                      'sn' = unique(catch_dfo$species_science_name)),
           '../data/key_dfo.csv', row.names = FALSE)
@@ -70,6 +73,15 @@ catch_dfo_fg <- catch_dfo %>%
   ungroup() %>%
   set_names(c('Year', 'Area', 'Code', 'Name', 'Catch_kg'))
 
+# 1991-1995
+# DFO catch data only starts from 1996, for now let's assume catch in 1991-1995 is identical to 1996, and constant
+dfo_1996 <- catch_dfo_fg %>% filter(Year == 1996)
+yr <- rep(1991:1995, each = nrow(dfo_1996))
+filler <- data.frame(Year = yr, dfo_1996[rep(seq_len(nrow(dfo_1996)), 5), -1])
+
+#TODO: review this assumption - it may not hold for previous years
+catch_dfo_fg <- rbind(filler, catch_dfo_fg) # paste to real data  
+
 # these are the groups in the DFO catch data
 all_fg <- catch_dfo_fg %>% pull(Code) %>% unique() 
 
@@ -83,7 +95,7 @@ template <- data.frame(expand.grid('Year' = all_years, 'Area' = all_areas)) # th
 # we will then only keep the first of those values and make sure we use typeCatchts 1 in force.prm, to limit file size  
 # we do this for DFO annual data too because we get to divide by the correect number of days in a year, accounting for leap years etc.
 # this should minimize issues with the time step variable in the catch time series files
-all_dates <- data.frame('Date' = seq(as.Date('1996-01-01'), as.Date('2020-12-31'), by = 'days')) %>%
+all_dates <- data.frame('Date' = seq(as.Date('1991-01-01'), as.Date('2020-12-31'), by = 'days')) %>%
   mutate(Year = year(Date), Month = month(Date), Day = day(Date))
 
 decompose_catch <- function(this_fg, catch_frame, group_frame, s_frame, si_frame, area_frame, days_frame, template_frame){
@@ -159,7 +171,6 @@ all_catch <- rbindlist(lapply(all_fg, decompose_catch, catch_frame = catch_dfo_f
                               area_frame = area_key,
                               days_frame = all_dates, 
                               template_frame = template))
-
 
 # View --------------------------------------------------------------------
 # make time series plots to visualize this and to compare with original data
