@@ -172,6 +172,9 @@ all_catch <- rbindlist(lapply(all_fg, decompose_catch, catch_frame = catch_fg,
                      days_frame = all_dates, 
                      template_frame = template))
 
+# # test
+# all_catch %>% filter(box_id == 99) %>% pull(Catch_box_day_mgs) %>% sum()
+
 # View --------------------------------------------------------------------
 # make time series plots to visualize this and to compare with original data
 
@@ -249,7 +252,7 @@ all_catch %>%
 # however, we will have to add a lot of species here
 
 #remove all existing files first
-all_files <- list.files('../output', full.names = T)
+all_files <- list.files('../output/AKFIN', full.names = T)
 lapply(all_files, file.remove)
 
 for(b in 1:length(unique(all_catch$box_id))){
@@ -307,42 +310,42 @@ for(b in 1:length(unique(all_catch$box_id))){
 
 # Plot for ESSAS ----------------------------------------------------------
 
-library(gifski)
-
-atlantis_box <- atlantis_bgm %>% box_sf() %>% select(box_id)
-
-catch_pol <- all_catch %>% 
-  filter(Code == 'POL') %>%
-  mutate(Catch_mt = Catch_box_day_mgs * 5.7 * 20 * 60 * 60 * 24 / 1e9,
-         Year = year(Date),
-         Month = month(Date)) %>%
-  group_by(box_id, Year, Month) %>%
-  summarise(Catch = sum(Catch_mt)) %>%
-  ungroup() 
-
-catch_pol <- atlantis_box %>% left_join(catch_pol, by = 'box_id') %>% filter(!is.na(Year))
-
-all_years <- unique(catch_pol$Year)
-all_months <- unique(catch_pol$Month)
-
-for(y in 1:length(all_years)){
-  for(m in 1:length(all_months)){
-    
-    p <- catch_pol %>%
-      filter(Year == all_years[y], Month == all_months[m]) %>%
-      ggplot()+
-      geom_sf(aes(fill = log1p(Catch), color = NULL))+
-      scale_fill_viridis(limits = c(0, 6))+
-      theme_bw()+
-      labs(title = paste('Walleye pollock GOA catch in', all_years[y], '-',  all_months[m]), fill = 'Log catch (mt)')
-    
-    ggsave(paste0('../output/GIF/',all_years[y],'-',all_months[m],'.png'), p, width = 9, height = 4, dpi = 300)
-    
-  }
-}
-
-details = file.info(list.files(path='../output/GIF/', pattern = '*.png', full.names = TRUE))
-details = details[with(details, order(as.POSIXct(mtime))), ]
-files = rownames(details)
-
-gifski(files, gif_file = "animation.gif", width = 900, height = 400, delay = 0.2)
+# library(gifski)
+# 
+# atlantis_box <- atlantis_bgm %>% box_sf() %>% select(box_id)
+# 
+# catch_pol <- all_catch %>% 
+#   filter(Code == 'POL') %>%
+#   mutate(Catch_mt = Catch_box_day_mgs * 5.7 * 20 * 60 * 60 * 24 / 1e9,
+#          Year = year(Date),
+#          Month = month(Date)) %>%
+#   group_by(box_id, Year, Month) %>%
+#   summarise(Catch = sum(Catch_mt)) %>%
+#   ungroup() 
+# 
+# catch_pol <- atlantis_box %>% left_join(catch_pol, by = 'box_id') %>% filter(!is.na(Year))
+# 
+# all_years <- unique(catch_pol$Year)
+# all_months <- unique(catch_pol$Month)
+# 
+# for(y in 1:length(all_years)){
+#   for(m in 1:length(all_months)){
+#     
+#     p <- catch_pol %>%
+#       filter(Year == all_years[y], Month == all_months[m]) %>%
+#       ggplot()+
+#       geom_sf(aes(fill = log1p(Catch), color = NULL))+
+#       scale_fill_viridis(limits = c(0, 6))+
+#       theme_bw()+
+#       labs(title = paste('Walleye pollock GOA catch in', all_years[y], '-',  all_months[m]), fill = 'Log catch (mt)')
+#     
+#     ggsave(paste0('../output/GIF/',all_years[y],'-',all_months[m],'.png'), p, width = 9, height = 4, dpi = 300)
+#     
+#   }
+# }
+# 
+# details = file.info(list.files(path='../output/GIF/', pattern = '*.png', full.names = TRUE))
+# details = details[with(details, order(as.POSIXct(mtime))), ]
+# files = rownames(details)
+# 
+# gifski(files, gif_file = "animation.gif", width = 900, height = 400, delay = 0.2)
