@@ -228,52 +228,58 @@ t2 <- t1 %>%
 
 all_boxes <- t2 %>% pull(box_id) %>% unique()
 
-for(b in 1:length(all_boxes)){
+# separate AK boxes from BC boxes
+ak_boxes <- all_boxes[all_boxes < 92]
+bc_boxes <- all_boxes[all_boxes > 91]
+
+# list files for each area - need to do it outside the loop because we use timestamps to order them and each iteration would cock up the timestamp
+details_ak <- file.info(list.files('../output/AKFIN/', full.names = T))
+details_ak <- details_ak[with(details_ak, order(as.POSIXct(mtime))), ]
+files_ak <- rownames(details_ak)
+
+details_bc <- file.info(list.files('../output/DFO/', full.names = T))
+details_bc <- details_bc[with(details_bc, order(as.POSIXct(mtime))), ]
+files_bc <- rownames(details_bc)
+
+# Do AK boxes first
+for(b in 1:length(ak_boxes)){
   
-  this_box <- all_boxes[b]
+  this_box <- ak_boxes[b]
   
-  if(this_box < 92){
-    
-    details <- file.info(list.files('../output/AKFIN/', full.names = T))
-    details <- details[with(details, order(as.POSIXct(mtime))), ]
-    files <- rownames(details)
-    
-    this_file <- read.table(files[b], skip = 309)
-    
-    this_hal <- t2 %>% filter(box_id == this_box)
-    
-    # replace HAL in the original 
-    this_file$V22 <- this_hal$catch_box_day_mgs
-    
-    # make header
-    header_file <- paste0('../output/AKFIN/catch', this_box, '.ts')
-    # write header lines
-    writeLines(readLines(files[b], n = 309), con = header_file)
-    # write table body
-    write.table(this_file, file = header_file, append = T, sep = " ", row.names = FALSE, col.names = FALSE)
-    
-  } else {
-    
-    details <- file.info(list.files('../output/DFO/', full.names = T))
-    details <- details[with(details, order(as.POSIXct(mtime))), ]
-    files <- rownames(details)
-    
-    b <- b - 92 # modify b to correctly index from the DFO folder
-    
-    this_file <- read.table(files[b], skip = 309)
-    
-    this_hal <- t2 %>% filter(box_id == this_box)
-    
-    # replace HAL in the original 
-    this_file$V22 <- this_hal$catch_box_day_mgs
-    
-    # make header
-    header_file <- paste0('../output/DFO/catch', this_box, '.ts')
-    # write header lines
-    writeLines(readLines(files[b], n = 309), con = header_file)
-    # write table body
-    write.table(this_file, file = header_file, append = T, sep = " ", row.names = FALSE, col.names = FALSE)
-    
-  }
+  this_file <- read.table(files_ak[b], skip = 309)
+  
+  this_hal <- t2 %>% filter(box_id == this_box)
+  
+  # replace HAL in the original 
+  this_file$V22 <- this_hal$catch_box_day_mgs
+  
+  # make header
+  header_file <- paste0('../output/AKFIN/catch', this_box, '.ts')
+  # write header lines
+  writeLines(readLines(files_ak[b], n = 309), con = header_file)
+  # write table body
+  write.table(this_file, file = header_file, append = T, sep = " ", row.names = FALSE, col.names = FALSE)
+  
+} 
+
+# Now do BC boxes
+for(b in 1:length(bc_boxes)) {
+  
+  this_box <- bc_boxes[b]
+
+  this_file <- read.table(files_bc[b], skip = 309)
+  
+  this_hal <- t2 %>% filter(box_id == this_box)
+  
+  # replace HAL in the original
+  this_file$V22 <- this_hal$catch_box_day_mgs
+  
+  # make header
+  header_file <- paste0('../output/DFO/catch', this_box, '.ts')
+  # write header lines
+  writeLines(readLines(files_bc[b], n = 309), con = header_file)
+  # write table body
+  write.table(this_file, file = header_file, append = T, sep = " ", row.names = FALSE, col.names = FALSE)
   
 }
+  
