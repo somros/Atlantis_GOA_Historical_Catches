@@ -20,8 +20,6 @@ atlantis_box <- atlantis_bgm %>% box_sf()
 s <- read.csv('../data/seasonal_distributions/seasonal_distribution.csv')
 
 #TODO: there is a problem with chinook and coho in the island boxes in the S1-S4 - it should not be there. Amend in s file and produce new prm files
-
-
 # Alaska ------------------------------------------------------------------
 
 # read in ADF&G Groundfish Regulatory Areas
@@ -69,6 +67,53 @@ all_species <- catch %>% pull(Species) %>% unique() %>% sort()
 
 s_salmon <- s %>%
   select(grep(paste(all_species, collapse = "|"), names(s), ignore.case = T)) 
+
+# Fix non-zero adult chinook and coho in island boxes...
+# 21: nearest boxes are 16 and 22
+# 40: nearest boxes are 35, 36, 41, 43
+# 99: nearest boxes are 96, 100, 101
+
+s_21_SCH <- s_salmon[22,]$'Salmon_chinook_A_S3'
+s_21_SCO <- s_salmon[22,]$'Salmon_coho_A_S3'
+s_40_SCH <- s_salmon[41,]$'Salmon_chinook_A_S3'
+s_40_SCO <- s_salmon[41,]$'Salmon_coho_A_S3'
+s_99_SCH <- s_salmon[100,]$'Salmon_chinook_A_S3'
+s_99_SCO <- s_salmon[100,]$'Salmon_coho_A_S3'
+
+# do all the replacements from here on out
+# box 21 
+# Chinook
+s_salmon[17,]$'Salmon_chinook_A_S3' <- s_salmon[17,]$'Salmon_chinook_A_S3' + s_21_SCH / 2
+s_salmon[23,]$'Salmon_chinook_A_S3' <- s_salmon[23,]$'Salmon_chinook_A_S3' + s_21_SCH / 2
+s_salmon[22,]$'Salmon_chinook_A_S3' <- 0
+# Coho
+s_salmon[17,]$'Salmon_coho_A_S3' <- s_salmon[17,]$'Salmon_coho_A_S3' + s_21_SCO / 2
+s_salmon[23,]$'Salmon_coho_A_S3' <- s_salmon[23,]$'Salmon_coho_A_S3' + s_21_SCO / 2
+s_salmon[22,]$'Salmon_coho_A_S3' <- 0
+# box 40
+# Chinook
+s_salmon[36,]$'Salmon_chinook_A_S3' <- s_salmon[36,]$'Salmon_chinook_A_S3' + s_40_SCH / 4
+s_salmon[37,]$'Salmon_chinook_A_S3' <- s_salmon[37,]$'Salmon_chinook_A_S3' + s_40_SCH / 4
+s_salmon[42,]$'Salmon_chinook_A_S3' <- s_salmon[42,]$'Salmon_chinook_A_S3' + s_40_SCH / 4
+s_salmon[44,]$'Salmon_chinook_A_S3' <- s_salmon[44,]$'Salmon_chinook_A_S3' + s_40_SCH / 4
+s_salmon[41,]$'Salmon_chinook_A_S3' <- 0
+# coho
+s_salmon[36,]$'Salmon_coho_A_S3' <- s_salmon[36,]$'Salmon_coho_A_S3' + s_40_SCO / 4
+s_salmon[37,]$'Salmon_coho_A_S3' <- s_salmon[37,]$'Salmon_coho_A_S3' + s_40_SCO / 4
+s_salmon[42,]$'Salmon_coho_A_S3' <- s_salmon[42,]$'Salmon_coho_A_S3' + s_40_SCO / 4
+s_salmon[44,]$'Salmon_coho_A_S3' <- s_salmon[44,]$'Salmon_coho_A_S3' + s_40_SCO / 4
+s_salmon[41,]$'Salmon_coho_A_S3' <- 0
+# box 99\
+# Chinook
+s_salmon[97,]$'Salmon_chinook_A_S3' <- s_salmon[97,]$'Salmon_chinook_A_S3' + s_99_SCH / 3
+s_salmon[101,]$'Salmon_chinook_A_S3' <- s_salmon[101,]$'Salmon_chinook_A_S3' + s_99_SCH / 3
+s_salmon[102,]$'Salmon_chinook_A_S3' <- s_salmon[102,]$'Salmon_chinook_A_S3' + s_99_SCH / 3
+s_salmon[100,]$'Salmon_chinook_A_S3' <- 0
+# Coho
+s_salmon[97,]$'Salmon_coho_A_S3' <- s_salmon[97,]$'Salmon_coho_A_S3' + s_99_SCO / 3
+s_salmon[101,]$'Salmon_coho_A_S3' <- s_salmon[101,]$'Salmon_coho_A_S3' + s_99_SCO / 3
+s_salmon[102,]$'Salmon_coho_A_S3' <- s_salmon[102,]$'Salmon_coho_A_S3' + s_99_SCO / 3
+s_salmon[100,]$'Salmon_coho_A_S3' <- 0
 
 s_long <- s_salmon %>%
   select(grep('A_S3', names(s_salmon))) %>%
