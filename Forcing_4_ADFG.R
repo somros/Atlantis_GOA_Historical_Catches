@@ -1,11 +1,11 @@
 # Salmon
 # produce salmon columns for the ts forcing files, by box
-# Harvest data from Curry Cunningham 
+# Harvest data from Curry Cunningham for Alaska (ADF&G)
+# Harvest data for BC from Jason Parsley
 
 # read data
 library(sf)
-library(dplyr)
-library(ggplot2)
+library(tidyverse)
 library(rbgm)
 library(readxl)
 library(lubridate)
@@ -20,6 +20,9 @@ atlantis_box <- atlantis_bgm %>% box_sf()
 s <- read.csv('../data/seasonal_distributions/seasonal_distribution.csv')
 
 #TODO: there is a problem with chinook and coho in the island boxes in the S1-S4 - it should not be there. Amend in s file and produce new prm files
+
+
+# Alaska ------------------------------------------------------------------
 
 # read in ADF&G Groundfish Regulatory Areas
 adfg_areas <- st_read('../data/Salmon/reg_areas/reg_areas.shp')
@@ -61,38 +64,202 @@ t <- atlantis_pts %>%
   st_set_geometry(NULL) %>%
   full_join(catch, by = c('Code' = 'Mgt Area Code'))
 
-# one species at a time
+# s long
 all_species <- catch %>% pull(Species) %>% unique() %>% sort()
 
-this_species <- all_species[1]
+s_salmon <- s %>%
+  select(grep(paste(all_species, collapse = "|"), names(s), ignore.case = T)) 
 
-# join with spatial distributions
-this_t <- t %>% 
-  filter(Species == this_species)
-
-this_s <- s %>% 
-  select(grep(paste(this_species, 'A', 'S3', sep = '_'), names(s), ignore.case = T)) %>%
+s_long <- s_salmon %>%
+  select(grep('A_S3', names(s_salmon))) %>%
+  set_names(all_species) %>%
   mutate(box_id = 0:(nrow(.)-1)) %>%
-  set_names(c('s','box_id'))
+  pivot_longer(-box_id, names_to = 'Species', values_to = 's')
 
-this_t1 <- this_t %>%
-  left_join(this_s, by = 'box_id') %>%
-  group_by(Year, Code) %>%
+t1 <- t %>%
+  left_join(s_long, by = c('Species', 'box_id')) %>%
+  group_by(Species, Year, Code) %>%
   mutate(s_by_area = sum(s)) %>%
   ungroup() %>%
   mutate(Catch_box_mt = MT * s / s_by_area) %>%
-  select(Year, box_id, Catch_box_mt)
+  select(Species, Year, box_id, Catch_box_mt)
 
 # Convert catch in mt/y into catch per day in mg N s-1
 all_dates <- data.frame('Date' = seq(as.Date('1991-01-01'), as.Date('2020-12-31'), by = 'days')) %>%
   mutate(Year = year(Date), Month = month(Date), Day = day(Date))
 
-this_t2 <- this_t1 %>%
+t2 <- t1 %>%
   full_join(all_dates, by = 'Year') %>%
-  group_by(Year, box_id) %>%
+  group_by(Species, Year, box_id) %>%
   mutate(Month_day = paste(Month, Day, sep = '_'),
          Catch_box_day_mt = Catch_box_mt / length(Month_day),
          Catch_box_day_mgs = Catch_box_day_mt * 1e9 / (60*60*24) / (20 * 5.7)) %>%
   ungroup() %>%
   filter(Day == 1) %>%
-  select(Date, box_id, Catch_box_day_mgs)
+  select(Species, Date, box_id, Catch_box_day_mgs) 
+
+t3 <- t2 %>%
+  pivot_wider(names_from = Species, values_from = Catch_box_day_mgs)
+
+
+# Canada ------------------------------------------------------------------
+
+# The data Isaac received from Jason Parsley seems very similar to what is publicly available here: https://open.canada.ca/data/en/dataset/7ac5fe02-308d-4fff-b805-80194f8ddeb4
+# Data is organized by gear (gill net, seine, troll)
+# Issues: only commercial catch; in pieces (no weight); only back to 1996; 1996-2004 is post-season, 2005-2020 is in-season
+# I also have a pretty hard time getting a shapefile of the Management Areas (is available as online map on Canada Open Data but they don't let you export it / download it)
+# Aggregate catch from all areas and apportion based on values of s (i.e. ditch the DFO areas)
+# Aggregate all gears
+# Get an "average size" for each species and multiply by the pieces to have an estimate of the weight
+
+# read data
+post_gill <- read_xlsx('../data/Salmon/FISHDATA-3814-IKaplan-Commercial_Salmon_Catch_1996-2020.xlsx', sheet = 2, range = 'A3:K152')
+in_gill <- read_xlsx('../data/Salmon/FISHDATA-3814-IKaplan-Commercial_Salmon_Catch_1996-2020.xlsx', sheet = 3, range = 'A3:Q229')
+post_seine <- read_xlsx('../data/Salmon/FISHDATA-3814-IKaplan-Commercial_Salmon_Catch_1996-2020.xlsx', sheet = 4, range = 'A3:K117')
+in_seine <- read_xlsx('../data/Salmon/FISHDATA-3814-IKaplan-Commercial_Salmon_Catch_1996-2020.xlsx', sheet = 5, range = 'A3:Q180')
+post_troll <- read_xlsx('../data/Salmon/FISHDATA-3814-IKaplan-Commercial_Salmon_Catch_1996-2020.xlsx', sheet = 6, range = 'A3:K191')
+in_troll <- read_xlsx('../data/Salmon/FISHDATA-3814-IKaplan-Commercial_Salmon_Catch_1996-2020.xlsx', sheet = 7, range = 'A3:Q440')
+
+# Based on the map at https://www.pac.dfo-mpo.gc.ca/fm-gp/maps-cartes/areas-secteurs/index-eng.html, the areas that overlap with Atlantis are:
+# 101,142,130,103,3,4,104,105,5,1,2,102,6,106,7,107,8,108,9,109,10,110,11,111
+
+dfo_areas <- c(101,142,130,103,3,4,104,105,5,1,2,102,6,106,7,107,8,108,9,109,10,110,11,111)
+
+# in-season data contains retained and discarded for each species
+# ASSUMPTION: only use kept fish
+in_gill <- in_gill %>% filter(MGMT_AREA %in% dfo_areas) %>% select(CALENDAR_YEAR, SOCKEYE_KEPT, COHO_KEPT, PINK_KEPT, CHUM_KEPT, CHINOOK_KEPT)
+in_seine <- in_seine %>% filter(MGMT_AREA %in% dfo_areas) %>% select(CALENDAR_YEAR, SOCKEYE_KEPT, COHO_KEPT, PINK_KEPT, CHUM_KEPT, CHINOOK_KEPT)
+in_troll <- in_troll %>% filter(MGMT_AREA %in% dfo_areas) %>% select(CALENDAR_YEAR, SOCKEYE_KEPT, COHO_KEPT, PINK_KEPT, CHUM_KEPT, CHINOOK_KEPT)
+
+in_all <- rbind(in_gill, in_seine, in_troll) %>%
+  set_names(c('Year','Sockeye','Coho','Pink','Chum','Chinook')) %>%
+  pivot_longer(-Year, names_to = 'Species', values_to = 'Catch_pcs') %>%
+  mutate(Catch_pcs = replace_na(Catch_pcs, 0)) %>%
+  group_by(Year, Species) %>%
+  summarise(Catch_pcs = sum(Catch_pcs)) %>%
+  ungroup()
+
+# post season data
+post_gill <- post_gill %>% filter(MGMT_AREA %in% dfo_areas) %>% select(CALENDAR_YEAR, SOCKEYE_KEPT, COHO_KEPT, PINK_KEPT, CHUM_KEPT, CHINOOK_KEPT)
+post_seine <- post_seine %>% filter(MGMT_AREA %in% dfo_areas) %>% select(CALENDAR_YEAR, SOCKEYE_KEPT, COHO_KEPT, PINK_KEPT, CHUM_KEPT, CHINOOK_KEPT)
+post_troll <- post_troll %>% filter(MGMT_AREA %in% dfo_areas) %>% select(CALENDAR_YEAR, SOCKEYE_KEPT, COHO_KEPT, PINK_KEPT, CHUM_KEPT, CHINOOK_KEPT)
+
+post_all <- rbind(post_gill, post_seine, post_troll) %>%
+  set_names(c('Year','Sockeye','Coho','Pink','Chum','Chinook')) %>%
+  pivot_longer(-Year, names_to = 'Species', values_to = 'Catch_pcs') %>%
+  mutate(Catch_pcs = replace_na(Catch_pcs, 0)) %>%
+  group_by(Year, Species) %>%
+  summarise(Catch_pcs = sum(Catch_pcs)) %>%
+  ungroup()
+
+# now paste all together
+dfo <- rbind(post_all, in_all)
+
+# enter average body size. These were collated by Isaac, TODO: check where these come from and amend
+# ASSUMPTION: not all caught fish will be this size, jacks are also counted towards the catch
+
+weight_key <- data.frame('Species' = c('Chinook','Chum','Coho','Pink','Sockeye'), 'Weight_g' = c(6809,5000,3600,1814,2700))
+
+dfo <- dfo %>%
+  left_join(weight_key, by = 'Species') %>%
+  mutate(Catch_mt = Catch_pcs * Weight_g / 1000000) %>%
+  select(Year, Species, Catch_mt)
+
+# apportion to boxes in BC
+s_dfo <- s_long %>% filter(box_id > 91)
+
+t4 <- dfo %>% 
+  full_join(s_dfo, by = 'Species') %>%
+  group_by(Species, Year) %>%
+  mutate(s_by_area = sum(s)) %>%
+  ungroup() %>%
+  mutate(Catch_box_mt = Catch_mt * s / s_by_area) %>%
+  select(Year, Species, box_id, Catch_box_mt)
+
+# Convert catch in mt/y into catch per day in mg N s-1
+all_dates <- data.frame('Date' = seq(as.Date('1996-01-01'), as.Date('2020-12-31'), by = 'days')) %>%
+  mutate(Year = year(Date), Month = month(Date), Day = day(Date))
+
+t5 <- t4 %>%
+  full_join(all_dates, by = 'Year') %>%
+  group_by(Species, Year, box_id) %>%
+  mutate(Month_day = paste(Month, Day, sep = '_'),
+         Catch_box_day_mt = Catch_box_mt / length(Month_day),
+         Catch_box_day_mgs = Catch_box_day_mt * 1e9 / (60*60*24) / (20 * 5.7)) %>%
+  ungroup() %>%
+  filter(Day == 1) %>%
+  select(Species, Date, box_id, Catch_box_day_mgs) 
+
+t6 <- t5 %>%
+  pivot_wider(names_from = Species, values_from = Catch_box_day_mgs)
+
+# assume constant catch 1991-1996
+catch_1996 <- t6 %>%
+  mutate(Year = year(Date), Month = month(Date), Day = day(Date)) %>%
+  filter(Year == 1996)
+
+yr <- rep(1991:1995, each = length(catch_1996$Year))
+filler <- data.frame(Year = yr, catch_1996[rep(seq_len(nrow(catch_1996)), 5),]) %>%
+  select(-Date, -Year.1) %>%
+  mutate(Date = as.Date(paste(Year, Month, Day, sep = '-'))) %>%
+  select(Date, box_id, Chinook:Sockeye)
+  
+t7 <- rbind(filler, t6)
+
+
+# View --------------------------------------------------------------------
+
+# Let's have a look at this
+
+# # Alaska
+# t3 %>%
+#   mutate(Year = year(Date), Month = month(Date)) %>%
+#   select(-Date) %>%
+#   pivot_longer(-c(Year,Month,box_id), names_to = 'Species', values_to = 'Catch_mgs') %>%
+#   group_by(Species, Year, Month) %>%
+#   summarise(Catch_mgs = sum(Catch_mgs)) %>%
+#   ungroup() %>%
+#   select(-Month) %>%
+#   distinct() %>%
+#   mutate(Catch_mt_yr = Catch_mgs * (60*60*24) * 365 * 20 * 5.7 / 1e9) %>%
+#   ggplot()+
+#   geom_area(aes(x = Year, y = Catch_mt_yr, fill = Species))
+# 
+# catch %>%
+#   group_by(Species, Year) %>%
+#   summarise(Catch_mt = sum(MT)) %>%
+#   ggplot()+geom_area(aes(x = Year, y = Catch_mt, fill = Species))
+# 
+# 
+# # Canada
+# t7 %>%
+#   mutate(Year = year(Date), Month = month(Date)) %>%
+#   select(-Date) %>%
+#   pivot_longer(-c(Year,Month,box_id), names_to = 'Species', values_to = 'Catch_mgs') %>%
+#   group_by(Species, Year, Month) %>%
+#   summarise(Catch_mgs = sum(Catch_mgs)) %>%
+#   ungroup() %>%
+#   select(-Month) %>%
+#   distinct() %>%
+#   mutate(Catch_mt_yr = Catch_mgs * (60*60*24) * 365 * 20 * 5.7 / 1e9) %>%
+#   filter(Year > 1995) %>%
+#   ggplot()+
+#   geom_area(aes(x = Year, y = Catch_mt_yr, fill = Species))
+# 
+# dfo %>%
+#   ggplot()+geom_area(aes(x = Year, y = Catch_mt, fill = Species))
+  
+    
+# Write to files ----------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
