@@ -99,7 +99,8 @@ t2 <- t1 %>%
   select(Species, Date, box_id, Catch_box_day_mgs) 
 
 t3 <- t2 %>%
-  pivot_wider(names_from = Species, values_from = Catch_box_day_mgs)
+  pivot_wider(names_from = Species, values_from = Catch_box_day_mgs) %>%
+  select(Date, box_id, Chinook, Chum, Coho, Pink, Sockeye)
 
 
 # Canada ------------------------------------------------------------------
@@ -249,17 +250,76 @@ t7 <- rbind(filler, t6)
 # dfo %>%
 #   ggplot()+geom_area(aes(x = Year, y = Catch_mt, fill = Species))
   
-    
 # Write to files ----------------------------------------------------------
 
+t8 <- rbind(t3, t7)
 
+# missing catch from a few boxes in the last years
+t9 <- t8 %>% 
+  complete(Date, box_id) %>%
+  replace(is.na(.),0)
 
+all_boxes <- 0:108
 
+# separate AK boxes from BC boxes
+ak_boxes <- all_boxes[all_boxes < 92]
+bc_boxes <- all_boxes[all_boxes > 91]
 
+# list files for each area - need to do it outside the loop because we use timestamps to order them and each iteration would cock up the timestamp
+details_ak <- file.info(list.files('../output/AKFIN/', full.names = T))
+details_ak <- details_ak[with(details_ak, order(as.POSIXct(mtime))), ]
+files_ak <- rownames(details_ak)
 
+details_bc <- file.info(list.files('../output/DFO/', full.names = T))
+details_bc <- details_bc[with(details_bc, order(as.POSIXct(mtime))), ]
+files_bc <- rownames(details_bc)
 
+# Do AK boxes first
+for(b in 1:length(ak_boxes)){
+  
+  this_box <- ak_boxes[b]
+  
+  this_file <- read.table(files_ak[b], skip = 309)
+  
+  this_salmon <- t9 %>% filter(box_id == this_box)
+  
+  # replace salmon in the original 
+  this_file$V41 <- this_salmon$Chinook
+  this_file$V42 <- this_salmon$Chum
+  this_file$V43 <- this_salmon$Coho
+  this_file$V44 <- this_salmon$Pink
+  this_file$V45 <- this_salmon$Sockeye
+  
+  # make header
+  header_file <- paste0('../output/AKFIN/catch', this_box, '.ts')
+  # write header lines
+  writeLines(readLines(files_ak[b], n = 309), con = header_file)
+  # write table body
+  write.table(this_file, file = header_file, append = T, sep = " ", row.names = FALSE, col.names = FALSE)
+  
+} 
 
-
-
-
-
+# Now do BC boxes
+for(b in 1:length(bc_boxes)) {
+  
+  this_box <- bc_boxes[b]
+  
+  this_file <- read.table(files_bc[b], skip = 309)
+  
+  this_salmon <- t9 %>% filter(box_id == this_box)
+  
+  # replace salmon in the original 
+  this_file$V41 <- this_salmon$Chinook
+  this_file$V42 <- this_salmon$Chum
+  this_file$V43 <- this_salmon$Coho
+  this_file$V44 <- this_salmon$Pink
+  this_file$V45 <- this_salmon$Sockeye
+  
+  # make header
+  header_file <- paste0('../output/DFO/catch', this_box, '.ts')
+  # write header lines
+  writeLines(readLines(files_bc[b], n = 309), con = header_file)
+  # write table body
+  write.table(this_file, file = header_file, append = T, sep = " ", row.names = FALSE, col.names = FALSE)
+  
+}
