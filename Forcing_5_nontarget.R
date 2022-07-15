@@ -183,7 +183,7 @@ forage_catch_7 <- template %>%
 # Write this out ----------------------------------------------------------
 
 # boxes
-all_boxes <- unique(forage_catch_7$box_id)
+all_boxes <- 0:91 # only AK boxes
 
 # list files for each area - need to do it outside the loop because we use timestamps to order them and each iteration would cock up the timestamp
 details_ak <- file.info(list.files('../output/AKFIN/', full.names = T))
@@ -199,12 +199,15 @@ for(b in 1:length(all_boxes)){
   
   this_forage <- forage_catch_7 %>% filter(box_id == this_box)
   
-  # replace salmon in the original 
-  this_file$V47 <- this_forage$Capelin
-  this_file$V48 <- this_forage$Sandlance
-  this_file$V49 <- this_forage$Forage_slope
-  this_file$V50 <- this_forage$Eulachon
-
+  if(nrow(this_forage)>0) {
+    # replace forage in the original 
+    this_file$V47 <- this_forage$Capelin
+    this_file$V48 <- this_forage$Sandlance
+    this_file$V49 <- this_forage$Forage_slope
+    this_file$V50 <- this_forage$Eulachon
+    
+  }
+  
   # make header
   header_file <- paste0('../output/AKFIN/catch', this_box, '.ts')
   # write header lines

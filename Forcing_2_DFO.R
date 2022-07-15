@@ -218,6 +218,7 @@ all_catch %>%
 # however, we will have to add a lot of species here
 
 #remove all existing files first
+dir.create('../output/DFO')
 all_files <- list.files('../output/DFO', full.names = T)
 lapply(all_files, file.remove)
 

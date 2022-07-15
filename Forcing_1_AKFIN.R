@@ -6,7 +6,6 @@ library(sf)
 library(RColorBrewer)
 library(viridis)
 
-
 select <- dplyr::select
 
 # This is for the US (Alaska) part of the model.
@@ -252,6 +251,7 @@ all_catch %>%
 # however, we will have to add a lot of species here
 
 #remove all existing files first
+dir.create('../output/AKFIN')
 all_files <- list.files('../output/AKFIN', full.names = T)
 lapply(all_files, file.remove)
 
