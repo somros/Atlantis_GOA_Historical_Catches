@@ -102,12 +102,13 @@ t1 <- t %>%
          Catch_box_day_mgs = Catch_box_day_mt * 1e9 / (60*60*24) / (20 * 5.7)) %>%
   ungroup() %>%
   filter(Day == 1) %>%
-  select(Date, box_id, Catch_box_day_mgs)
+  select(Date, box_id, Catch_box_day_mgs) 
 
 # expand to boxes with no catch
 t2 <- expand.grid(Date = t1$Date, box_id = 0:91) %>%
   full_join(t1, by = c('Date','box_id')) %>%
-  mutate(Catch_box_day_mgs = replace_na(Catch_box_day_mgs, 0))
+  mutate(Catch_box_day_mgs = replace_na(Catch_box_day_mgs, 0)) %>%
+  distinct()
 
 # Write this out ----------------------------------------------------------
 
@@ -130,11 +131,7 @@ for(b in 1:length(all_boxes)){
   
   if(nrow(this_tanner)>0) {
     # replace forage in the original 
-    this_file$V47 <- this_forage$Capelin
-    this_file$V48 <- this_forage$Sandlance
-    this_file$V49 <- this_forage$Forage_slope
-    this_file$V50 <- this_forage$Eulachon
-    
+    this_file$V51 <- this_tanner$Catch_box_day_mgs
   }
   
   # make header
