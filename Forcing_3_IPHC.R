@@ -6,6 +6,9 @@ library(readxl)
 library(rbgm)
 library(sf)
 library(lubridate)
+library(maps)
+library(mapdata)
+library(data.table)
 
 select <- dplyr::select
 
@@ -26,6 +29,33 @@ atlantis_box <- atlantis_bgm %>% box_sf()
 
 # areas 4A and 2B will be part out the model domain
 iphc_areas <- iphc_areas %>% st_transform(crs = atlantis_bgm$extra$projection)
+
+#################################################################################################
+# Make some figures for the methods
+# add some coastline
+iphc_areas1 <- iphc_areas %>% filter(ET_ID %in% c('2B', '2C', '3A', '3B', '4A'))
+atlantis_box <- atlantis_bgm %>% box_sf()
+atlantis_crs <- atlantis_bgm$extra$projection
+coast <- maps::map(database = "worldHires", regions = c("Canada","US"), plot=FALSE, fill=TRUE)
+coast_sf <- coast %>% st_as_sf(crs = 4326) %>% st_transform(crs=atlantis_crs)
+this_bbox <- iphc_areas1 %>% st_bbox()
+
+p <- ggplot()+
+  geom_sf(data = atlantis_box, aes(fill = botz, alpha = .5), color = 'navy')+
+  geom_sf(data = iphc_areas1, fill = NA, color = 'red', size = 1)+
+  geom_sf(data = coast_sf, fill = 'grey')+
+  coord_sf(xlim = c(this_bbox$xmin, this_bbox$xmax), ylim = c(this_bbox$ymin, this_bbox$ymax))+
+  geom_sf_label(data = iphc_areas1, aes(label = ET_ID), nudge_y = -100000, size = 5)+
+  theme_bw()+
+  theme(axis.text = element_text(size = 12), legend.text = element_text(size = 12))+
+  labs(title = 'IPHC Areas and Atlantis geometry', fill = 'Box depth', x = '', y = '')
+p
+
+ggsave('../methods/images/iphc.png', p, width = 9, height = 4)
+
+# NOTE: in 5A we have only boundary boxes and a sliver of 2 dynamic boxes, we can probably approximate those as if they belong to 5B
+# when bck on land we need to fix the colors
+#################################################################################################
 
 # atlantis_box %>% 
 #   ggplot()+
@@ -282,4 +312,60 @@ for(b in 1:length(bc_boxes)) {
   write.table(this_file, file = header_file, append = T, sep = " ", row.names = FALSE, col.names = FALSE)
   
 }
-  
+
+
+# Compare catch from IPHC and AKRO-BLEND ----------------------------------
+
+# Halibut catch is reported in the AKRO-BLEND set
+# How does it compare to catch from IPHC? 
+# Closest comparison will be areas 2c, 3a, 3b, 4a with NMFS 610-650
+# iphc <- catch_iphc %>%
+#   set_names(c('year','area','stat_area','catch_mt','vessels')) %>%
+#   filter(area %in% c('2B','3A','3B','4A'), year > 1990) %>%
+#   group_by(year, area) %>%
+#   summarise(catch = sum(catch_mt)) %>%
+#   ungroup() %>%
+#   mutate(Set = 'IPHC')
+# 
+# # Here we will need:
+# # Catch by species data from AKFIN
+# all_files <- list.files('../data/AKFIN/Catch/by_fisheries/',full.names = TRUE)
+# file_list <- lapply(all_files, read.csv,fileEncoding='UTF-8-BOM')
+# catch_byf <- rbindlist(file_list)
+# 
+# # what are areas 680 and 621 in this data?
+# catch_621 <- catch_byf %>% filter(NMFS.Area == 621)
+# catch_680 <- catch_byf %>% filter(NMFS.Area == 680)
+# 
+# # after a look online, the (few) records from areas 621 and 680 should get aggregated, respectively, with 620 and 650
+# catch_byf <- catch_byf %>% 
+#   mutate(NMFS.Area = replace(NMFS.Area, NMFS.Area == 621, 620),
+#          NMFS.Area = replace(NMFS.Area, NMFS.Area == 680, 650))
+# 
+# catch_byf %>%
+#   filter(Species.Group == 'Halibut') %>%
+#   group_by(Trip.Target.Name) %>%
+#   tally()
+# 
+# # in the AKRO data, 72% of the halibut catch comes from directed catches, 26% from sablefish trips, and the rest is negligible
+# 
+# akro <- catch_byf %>%
+#   filter(Species.Group == 'Halibut') %>%
+#   select(Week.Ending.Date, NMFS.Area, Catch..mt.) %>%
+#   mutate(Year = year(Week.Ending.Date)) %>%
+#   group_by(Year, NMFS.Area) %>%
+#   summarise(catch = sum(Catch..mt.)) %>%
+#   ungroup() %>%
+#   set_names(c('year','area','catch')) %>%
+#   mutate(Set = 'AKRO')
+# 
+# all_hal <- rbind(iphc, akro)
+# 
+# all_hal %>%
+#   ggplot(aes(x = year, y = catch, color = Set))+
+#   geom_line()+
+#   theme_bw()+
+#   facet_wrap(~area)
+
+# it seems as though the IPHC data should include all halibut catches from directed commercial activities and from incidental by-catch
+# filter out halibut from AKRO and DFO data

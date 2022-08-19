@@ -19,6 +19,8 @@ library(sf)
 library(rbgm)
 library(lubridate)
 
+select <- dplyr::select
+
 # make a match between crab areas and Atlantis boxes, by inside point
 
 # A key from box to stat area
@@ -37,6 +39,32 @@ crab_areas <- crab_areas %>%
   select(DISTRICT_N) %>%
   rename(Area = DISTRICT_N) %>%
   st_transform(crs = atlantis_bgm$extra$projection)
+
+#################################################################################################
+# Make some figures for the methods
+# add some coastline
+atlantis_box <- atlantis_bgm %>% box_sf()
+atlantis_crs <- atlantis_bgm$extra$projection
+coast <- maps::map(database = "worldHires", regions = c("Canada","US"), plot=FALSE, fill=TRUE)
+coast_sf <- coast %>% st_as_sf(crs = 4326) %>% st_transform(crs=atlantis_crs)
+this_bbox <- crab_areas %>% st_bbox()
+
+p <- ggplot()+
+  geom_sf(data = atlantis_box, aes(fill = botz, alpha = .5), color = 'navy')+
+  geom_sf(data = crab_areas, fill = NA, color = 'red', size = 1)+
+  geom_sf(data = coast_sf, fill = 'grey')+
+  coord_sf(xlim = c(this_bbox$xmin, this_bbox$xmax), ylim = c(this_bbox$ymin, this_bbox$ymax))+
+  geom_sf_label(data = crab_areas, aes(label = Area), size = 5)+
+  theme_bw()+
+  theme(axis.text = element_text(size = 12), legend.text = element_text(size = 12))+
+  labs(title = 'ADF&G crab statistical Areas and Atlantis geometry', fill = 'Box depth', x = '', y = '')
+p
+
+ggsave('../methods/images/adfg_crab.pdf', p, width = 7, height = 4)
+
+# when bck on land we need to fix the colors
+#TODO: when back find a shapefile for YaKUTAT
+#################################################################################################
 
 # change names
 crab_areas$Area <- gsub('Kodiak District', 'Kodiak', crab_areas$Area)

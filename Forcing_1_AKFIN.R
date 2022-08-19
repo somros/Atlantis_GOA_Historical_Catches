@@ -5,6 +5,8 @@ library(rbgm)
 library(sf)
 library(RColorBrewer)
 library(viridis)
+library(maps)
+library(mapdata)
 
 select <- dplyr::select
 
@@ -25,6 +27,10 @@ catch_680 <- catch_byf %>% filter(NMFS.Area == 680)
 catch_byf <- catch_byf %>% 
   mutate(NMFS.Area = replace(NMFS.Area, NMFS.Area == 621, 620),
          NMFS.Area = replace(NMFS.Area, NMFS.Area == 680, 650))
+
+# remove halibut catch, because we use IPHC data #
+catch_byf <- catch_byf %>% 
+  filter(Species.Group != 'Halibut')
 
 # Seasonal distributions S1-S4
 s <- read.csv('../data/seasonal_distributions/seasonal_distribution.csv')
@@ -54,6 +60,32 @@ nmfs_sf <- nmfs_sf %>%
 
 # have a look
 nmfs_sf %>% ggplot()+geom_sf()+geom_sf_label(aes(label = NMFS_AREA))
+
+#################################################################################################
+# Make some figures for the methods
+# add some coastline
+atlantis_box <- atlantis_bgm %>% box_sf()
+atlantis_crs <- atlantis_bgm$extra$projection
+coast <- maps::map(database = "worldHires", regions = c("Canada","US"), plot=FALSE, fill=TRUE)
+coast_sf <- coast %>% st_as_sf(crs = 4326) %>% st_transform(crs=atlantis_crs)
+nmfs_sf1 <- nmfs_sf %>% st_transform(crs=atlantis_crs)
+this_bbox <- nmfs_sf1 %>% st_bbox()
+
+p <- ggplot()+
+  geom_sf(data = atlantis_box, aes(fill = botz, alpha = .5), color = 'navy')+
+  geom_sf(data = (nmfs_sf1 %>% filter(AREA > 1e+10)), fill = NA, color = 'red', size = 1)+
+  geom_sf(data = coast_sf, fill = 'grey')+
+  coord_sf(xlim = c(this_bbox$xmin, this_bbox$xmax), ylim = c(this_bbox$ymin, this_bbox$ymax))+
+  geom_sf_label(data = (nmfs_sf1 %>% filter(AREA > 1e+10)), aes(label = NMFS_AREA), nudge_y = -100000, size = 5)+
+  theme_bw()+
+  theme(axis.text = element_text(size = 12), legend.text = element_text(size = 12))+
+  labs(title = 'NMFS Areas and Atlantis geometry', fill = 'Box depth', x = '', y = '')
+p
+
+ggsave('../methods/images/nmfs.png', p, width = 9, height = 4)
+# when bck on land we need to fix the colors
+# make boundaries gray and use a better scale of blues for depth
+#################################################################################################
 
 area_key <- st_join(atlantis_pts, (nmfs_sf %>% select(NMFS_AREA))) %>%
   mutate(NMFS_AREA = ifelse(boundary == TRUE | botz == 0, NA, NMFS_AREA)) %>%
@@ -298,7 +330,7 @@ for(b in 1:length(unique(all_catch$box_id))){
   for(i in 1:length(all_fg)){
     cat(paste0("## COLUMN", i+1, ".name ", all_fg[i], "\n"), file = header_file, append = T)
     cat(paste0("## COLUMN", i+1, ".long_name ", all_fg[i], "\n"), file = header_file, append = T)
-    cat(paste0("## COLUMN", i+1, ".units mg s-1\n"), file = header_file, append = T)
+    cat(paste0("## COLUMN", i+1, ".units mg N s-1\n"), file = header_file, append = T)
     cat(paste0("## COLUMN", i+1, ".missing_value 0\n"), file = header_file, append = T)
     cat("##\n", file = header_file, append = T)
   }

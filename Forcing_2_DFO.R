@@ -9,11 +9,16 @@ library(maps)
 library(mapdata)
 library(lubridate)
 library(data.table)
+library(maps)
+library(mapdata)
 
 select <- dplyr::select
 
 #read data
 catch_dfo <- readRDS('../data/DFO/goa-clim-bc-groundfish-2020.rds') # dfo catch data
+# drop halibut, we will use catch estimates from IPHC
+catch_dfo <- catch_dfo %>% filter(species_common_name != 'pacific halibut')
+
 # group file
 atlantis_fg <- read.csv('../data/GOA_Groups.csv', header = T) %>%
   filter(IsImpacted == 1) # only keep groups that are marked as IsImpacted by fisheries in the group.csv file
@@ -59,12 +64,32 @@ area_key <- st_join(atlantis_pts, (dfo_sf %>% select(MAJOR))) %>%
   mutate(MAJOR = ifelse(boundary == TRUE | botz == 0, NA, MAJOR)) %>%
   filter(box_id > 91) # keep only boxes within BC
 
-# view with geometry
-# dfo_bbox <- dfo_sf %>% st_bbox()
-# dfo_sf %>% ggplot()+geom_sf(fill = NA)+geom_sf(data=atlantis_box, fill=NA)+
-#   coord_sf(xlim = c(dfo_bbox$xmin, dfo_bbox$xmax), ylim = c(dfo_bbox$ymin, dfo_bbox$ymax))+
-#   geom_sf_label(aes(label = MAJOR))
+#################################################################################################
+# Make some figures for the methods
+# add some coastline
+dfo_sf1 <- dfo_sf %>% filter(MAJOR %in% c('5A', '5B', '5C', '5D', '5E'))
+atlantis_box <- atlantis_bgm %>% box_sf()
+atlantis_crs <- atlantis_bgm$extra$projection
+coast <- maps::map(database = "worldHires", regions = c("Canada","US"), plot=FALSE, fill=TRUE)
+coast_sf <- coast %>% st_as_sf(crs = 4326) %>% st_transform(crs=atlantis_crs)
+this_bbox <- dfo_sf1 %>% st_bbox()
+
+p <- ggplot()+
+  geom_sf(data = atlantis_box, aes(fill = botz, alpha = .5), color = 'navy')+
+  geom_sf(data = dfo_sf1, fill = NA, color = 'red', size = 1)+
+  geom_sf(data = coast_sf, fill = 'grey')+
+  coord_sf(xlim = c(this_bbox$xmin, this_bbox$xmax), ylim = c(this_bbox$ymin, this_bbox$ymax))+
+  geom_sf_label(data = dfo_sf1, aes(label = MAJOR), nudge_y = -10000, size = 5)+
+  theme_bw()+
+  theme(axis.text = element_text(size = 12), legend.text = element_text(size = 12))+
+  labs(title = 'DFO Groundfish Areas and Atlantis geometry', fill = 'Box depth', x = '', y = '')
+p
+
+ggsave('../methods/images/dfo.png', p, width = 6, height = 4)
+
 # NOTE: in 5A we have only boundary boxes and a sliver of 2 dynamic boxes, we can probably approximate those as if they belong to 5B
+# when bck on land we need to fix the colors
+#################################################################################################
 
 # prepare the data: group by year, area, fg, and sum the catch
 catch_dfo_fg <- catch_dfo %>%

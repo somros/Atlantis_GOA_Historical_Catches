@@ -9,6 +9,8 @@ library(tidyverse)
 library(rbgm)
 library(readxl)
 library(lubridate)
+library(maps)
+library(mapdata)
 
 select <- dplyr::select
 
@@ -32,6 +34,31 @@ adfg_areas <- adfg_areas %>%
   st_transform(crs = atlantis_bgm$extra$projection)
 
 areas <- adfg_areas %>% pull(Code) %>% unique()
+
+#################################################################################################
+# Make some figures for the methods
+# add some coastline
+atlantis_box <- atlantis_bgm %>% box_sf()
+atlantis_crs <- atlantis_bgm$extra$projection
+coast <- maps::map(database = "worldHires", regions = c("Canada","US"), plot=FALSE, fill=TRUE)
+coast_sf <- coast %>% st_as_sf(crs = 4326) %>% st_transform(crs=atlantis_crs)
+this_bbox <- adfg_areas %>% st_bbox()
+
+p <- ggplot()+
+  geom_sf(data = atlantis_box, aes(fill = botz, alpha = .5), color = 'navy')+
+  geom_sf(data = adfg_areas, fill = NA, color = 'red', size = 1)+
+  geom_sf(data = coast_sf, fill = 'grey')+
+  coord_sf(xlim = c(this_bbox$xmin, this_bbox$xmax), ylim = c(this_bbox$ymin, this_bbox$ymax))+
+  geom_sf_label(data = adfg_areas, aes(label = Code), size = 5)+
+  theme_bw()+
+  theme(axis.text = element_text(size = 12), legend.text = element_text(size = 12))+
+  labs(title = 'ADF&G Areas and Atlantis geometry', fill = 'Box depth', x = '', y = '')
+p
+
+ggsave('../methods/images/adfg.png', p, width = 9, height = 4)
+
+# when bck on land we need to fix the colors
+#################################################################################################
 
 # read in catch data
 catch <- read_xlsx('../data/Salmon/RB_GOA-salmon-catch-tonnes-by-area.xlsx', sheet = 1, range = 'A1:J3509')
@@ -319,6 +346,23 @@ details_bc <- file.info(list.files('../output/DFO/', full.names = T))
 details_bc <- details_bc[with(details_bc, order(as.POSIXct(mtime))), ]
 files_bc <- rownames(details_bc)
 
+########################################################################
+# # test #
+# # salmon gets amplified somewhere. Where?
+# test <- t9 %>%
+#   pivot_longer(-c(Date, box_id), names_to = 'Species', values_to = 'mgN') %>%
+#   filter(Species == 'Pink') %>%
+#   mutate(Year = year(Date)) %>%
+#   select(-Date) %>%
+#   distinct() %>%
+#   group_by(Year) %>%
+#   summarise(mgN_all = sum(mgN)) %>%
+#   ungroup() %>%
+#   mutate(tons = mgN_all * 5.7 * 20 * (60*60*24) * 365 / 1e9)
+
+# up to here everything seems like in the data
+########################################################################
+
 # Do AK boxes first
 for(b in 1:length(ak_boxes)){
   
@@ -368,3 +412,28 @@ for(b in 1:length(bc_boxes)) {
   write.table(this_file, file = header_file, append = T, sep = " ", row.names = FALSE, col.names = FALSE)
   
 }
+
+
+# CHecking pink salmon catches --------------------------------------------
+
+# The end result seems to have pretty large catches of pink salmon, sometimes bigger than pollock
+# is this in the data?
+
+# how much pink do we have?
+pink <- catch %>% filter(Species == 'Pink') %>%
+  group_by(Year) %>%
+  summarise(Catch = sum(MT)) %>%
+  ungroup() %>%
+  set_names(c('year','catch_adfg'))
+
+# check pink here, we have a big catch
+pink_dfo <- dfo %>%
+  filter(Species == 'Pink') %>%
+  select(-Species) %>%
+  set_names(c('year','catch_dfo'))
+
+all_pink <- pink %>%
+  full_join(pink_dfo, by = 'year') %>%
+  mutate(catch = catch_adfg + catch_dfo)
+
+write.csv(all_pink, 'pink.csv', row.names = F)
