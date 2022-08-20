@@ -72,14 +72,16 @@ nmfs_sf1 <- nmfs_sf %>% st_transform(crs=atlantis_crs)
 this_bbox <- nmfs_sf1 %>% st_bbox()
 
 p <- ggplot()+
-  geom_sf(data = atlantis_box, aes(fill = botz, alpha = .5), color = 'navy')+
+  geom_sf(data = atlantis_box %>% filter(boundary == FALSE), aes(fill = botz), color = 'navy')+
+  scale_fill_gradient(low="blue", high="white")+
+  geom_sf(data = atlantis_box %>% filter(boundary == TRUE), fill = 'grey', color = 'navy')+
   geom_sf(data = (nmfs_sf1 %>% filter(AREA > 1e+10)), fill = NA, color = 'red', size = 1)+
-  geom_sf(data = coast_sf, fill = 'grey')+
+  geom_sf(data = coast_sf, fill = 'lightgrey')+
   coord_sf(xlim = c(this_bbox$xmin, this_bbox$xmax), ylim = c(this_bbox$ymin, this_bbox$ymax))+
   geom_sf_label(data = (nmfs_sf1 %>% filter(AREA > 1e+10)), aes(label = NMFS_AREA), nudge_y = -100000, size = 5)+
   theme_bw()+
   theme(axis.text = element_text(size = 12), legend.text = element_text(size = 12))+
-  labs(title = 'NMFS Areas and Atlantis geometry', fill = 'Box depth', x = '', y = '')
+  labs(fill = 'Box depth', x = '', y = '')
 p
 
 ggsave('../methods/images/nmfs.png', p, width = 9, height = 4)

@@ -75,14 +75,16 @@ coast_sf <- coast %>% st_as_sf(crs = 4326) %>% st_transform(crs=atlantis_crs)
 this_bbox <- dfo_sf1 %>% st_bbox()
 
 p <- ggplot()+
-  geom_sf(data = atlantis_box, aes(fill = botz, alpha = .5), color = 'navy')+
+  geom_sf(data = atlantis_box %>% filter(boundary == FALSE), aes(fill = botz), color = 'navy')+
+  scale_fill_gradient(low="blue", high="white")+
+  geom_sf(data = atlantis_box %>% filter(boundary == TRUE), fill = 'grey', color = 'navy')+
   geom_sf(data = dfo_sf1, fill = NA, color = 'red', size = 1)+
   geom_sf(data = coast_sf, fill = 'grey')+
   coord_sf(xlim = c(this_bbox$xmin, this_bbox$xmax), ylim = c(this_bbox$ymin, this_bbox$ymax))+
   geom_sf_label(data = dfo_sf1, aes(label = MAJOR), nudge_y = -10000, size = 5)+
   theme_bw()+
   theme(axis.text = element_text(size = 12), legend.text = element_text(size = 12))+
-  labs(title = 'DFO Groundfish Areas and Atlantis geometry', fill = 'Box depth', x = '', y = '')
+  labs(fill = 'Box depth', x = '', y = '')
 p
 
 ggsave('../methods/images/dfo.png', p, width = 6, height = 4)
