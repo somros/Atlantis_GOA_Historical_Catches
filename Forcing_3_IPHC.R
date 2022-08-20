@@ -41,14 +41,16 @@ coast_sf <- coast %>% st_as_sf(crs = 4326) %>% st_transform(crs=atlantis_crs)
 this_bbox <- iphc_areas1 %>% st_bbox()
 
 p <- ggplot()+
-  geom_sf(data = atlantis_box, aes(fill = botz, alpha = .5), color = 'navy')+
+  geom_sf(data = atlantis_box %>% filter(boundary == FALSE), aes(fill = botz), color = 'navy')+
+  scale_fill_gradient(low="blue", high="white")+
+  geom_sf(data = atlantis_box %>% filter(boundary == TRUE), fill = 'grey', color = 'navy')+
   geom_sf(data = iphc_areas1, fill = NA, color = 'red', size = 1)+
   geom_sf(data = coast_sf, fill = 'grey')+
   coord_sf(xlim = c(this_bbox$xmin, this_bbox$xmax), ylim = c(this_bbox$ymin, this_bbox$ymax))+
   geom_sf_label(data = iphc_areas1, aes(label = ET_ID), nudge_y = -100000, size = 5)+
   theme_bw()+
   theme(axis.text = element_text(size = 12), legend.text = element_text(size = 12))+
-  labs(title = 'IPHC Areas and Atlantis geometry', fill = 'Box depth', x = '', y = '')
+  labs(fill = 'Box depth', x = '', y = '')
 p
 
 ggsave('../methods/images/iphc.png', p, width = 9, height = 4)
@@ -88,7 +90,7 @@ atlantis_iphc_key <- atlantis_box %>%
 fiss_data <- read.csv('../data/Halibut/FISS/fiss_cleaned_09222021.csv')
 
 fiss_data <- fiss_data %>%
-  select(SURVEY_YEAR, START_LAT, START_LON, LGL_HAL_WT, SUBLGL_HAL_WT, IPHC_REG) %>%
+  select(SURVEY_YEAR, START_LAT, START_LON, LGL_HAL_WT, SUBLGL_HAL_WT, IPHC_REG, HOOKS_RETRIEVED) %>%
   distinct() %>%
   st_as_sf(coords = c('START_LON', 'START_LAT'), crs = 4326) %>%
   st_transform(crs = atlantis_bgm$extra$projection)
@@ -106,14 +108,14 @@ fiss_atlantis <- fiss_data %>%
 
 biom_4a <- fiss_data %>% 
   filter(IPHC_REG == '4A') %>%
-  mutate(TOT = LGL_HAL_WT + SUBLGL_HAL_WT) %>%
+  mutate(TOT = (LGL_HAL_WT + SUBLGL_HAL_WT)/HOOKS_RETRIEVED) %>%
   group_by(SURVEY_YEAR) %>%
   summarize(TOT = sum(TOT)) %>%
   ungroup() %>%
   st_set_geometry(NULL)
   
 biom_4a_atlantis <- fiss_atlantis %>% 
-  mutate(TOT = LGL_HAL_WT + SUBLGL_HAL_WT) %>%
+  mutate(TOT = (LGL_HAL_WT + SUBLGL_HAL_WT)/HOOKS_RETRIEVED) %>%
   group_by(SURVEY_YEAR) %>%
   summarize(TOT = sum(TOT)) %>%
   ungroup() %>%
@@ -140,14 +142,14 @@ fiss_atlantis <- fiss_data %>%
 
 biom_2b <- fiss_data %>% 
   filter(IPHC_REG == '2B') %>%
-  mutate(TOT = LGL_HAL_WT + SUBLGL_HAL_WT) %>%
+  mutate(TOT = (LGL_HAL_WT + SUBLGL_HAL_WT)/HOOKS_RETRIEVED) %>%
   group_by(SURVEY_YEAR) %>%
   summarize(TOT = sum(TOT)) %>%
   ungroup() %>%
   st_set_geometry(NULL)
 
 biom_2b_atlantis <- fiss_atlantis %>% 
-  mutate(TOT = LGL_HAL_WT + SUBLGL_HAL_WT) %>%
+  mutate(TOT = (LGL_HAL_WT + SUBLGL_HAL_WT)/HOOKS_RETRIEVED) %>%
   group_by(SURVEY_YEAR) %>%
   summarize(TOT = sum(TOT)) %>%
   ungroup() %>%
