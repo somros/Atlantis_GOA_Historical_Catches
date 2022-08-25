@@ -50,7 +50,7 @@ p <- ggplot()+
   geom_sf_label(data = iphc_areas1, aes(label = ET_ID), nudge_y = -100000, size = 5)+
   theme_bw()+
   theme(axis.text = element_text(size = 12), legend.text = element_text(size = 12))+
-  labs(fill = 'Box depth', x = '', y = '')
+  labs(fill = 'Box depth (m)', x = '', y = '')
 p
 
 ggsave('../methods/images/iphc.png', p, width = 9, height = 4)

@@ -18,6 +18,8 @@ library(tidyverse)
 library(sf)
 library(rbgm)
 library(lubridate)
+library(maps)
+library(mapdata)
 
 select <- dplyr::select
 
@@ -50,14 +52,16 @@ coast_sf <- coast %>% st_as_sf(crs = 4326) %>% st_transform(crs=atlantis_crs)
 this_bbox <- crab_areas %>% st_bbox()
 
 p <- ggplot()+
-  geom_sf(data = atlantis_box, aes(fill = botz, alpha = .5), color = 'navy')+
+  geom_sf(data = atlantis_box %>% filter(boundary == FALSE), aes(fill = botz), color = 'navy')+
+  scale_fill_gradient(low="blue", high="white")+
+  geom_sf(data = atlantis_box %>% filter(boundary == TRUE), fill = 'grey', color = 'navy')+
   geom_sf(data = crab_areas, fill = NA, color = 'red', size = 1)+
   geom_sf(data = coast_sf, fill = 'grey')+
   coord_sf(xlim = c(this_bbox$xmin, this_bbox$xmax), ylim = c(this_bbox$ymin, this_bbox$ymax))+
   geom_sf_label(data = crab_areas, aes(label = Area), size = 5)+
   theme_bw()+
   theme(axis.text = element_text(size = 12), legend.text = element_text(size = 12))+
-  labs(title = 'ADF&G crab statistical Areas and Atlantis geometry', fill = 'Box depth', x = '', y = '')
+  labs(fill = 'Box depth (m)', x = '', y = '')
 p
 
 ggsave('../methods/images/adfg_crab.pdf', p, width = 7, height = 4)

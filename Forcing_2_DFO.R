@@ -84,7 +84,7 @@ p <- ggplot()+
   geom_sf_label(data = dfo_sf1, aes(label = MAJOR), nudge_y = -10000, size = 5)+
   theme_bw()+
   theme(axis.text = element_text(size = 12), legend.text = element_text(size = 12))+
-  labs(fill = 'Box depth', x = '', y = '')
+  labs(fill = 'Box depth (m)', x = '', y = '')
 p
 
 ggsave('../methods/images/dfo.png', p, width = 6, height = 4)

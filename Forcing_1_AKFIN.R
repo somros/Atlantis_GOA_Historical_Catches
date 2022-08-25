@@ -81,7 +81,7 @@ p <- ggplot()+
   geom_sf_label(data = (nmfs_sf1 %>% filter(AREA > 1e+10)), aes(label = NMFS_AREA), nudge_y = -100000, size = 5)+
   theme_bw()+
   theme(axis.text = element_text(size = 12), legend.text = element_text(size = 12))+
-  labs(fill = 'Box depth', x = '', y = '')
+  labs(fill = 'Box depth (m)', x = '', y = '')
 p
 
 ggsave('../methods/images/nmfs.png', p, width = 9, height = 4)
