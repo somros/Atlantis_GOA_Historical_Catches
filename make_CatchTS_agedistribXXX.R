@@ -16,7 +16,7 @@
 
 # Read in selectivity
 selex <- read.csv('../data/selex_10_age_classes.csv')
-selex <- selex %>% select(Code, age_class, selex)
+selex <- selex %>% select(Code, age_class, selex_age_class)
 # read in population data
 pop_data <- read.csv('C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/build_init_prm_10COHORTS/data/nums_age_functional_groups.csv')
 
@@ -29,7 +29,7 @@ pop_data <- pop_data %>%
 pop_data_and_catch <- pop_data %>%
   left_join(selex, by = c('Code', 'age_class')) %>%
   drop_na() %>%
-  mutate(caught_inds = numbers_at_age * selex,
+  mutate(caught_inds = numbers_at_age * selex_age_class,
          caught_biom_g = caught_inds * wet_weight_g) %>%
   group_by(Code) %>%
   mutate(catch_tot_g = sum(caught_biom_g)) %>%
@@ -43,3 +43,9 @@ pop_data_and_catch %>%
   scale_x_continuous(breaks = seq(1,10,1))+
   theme_bw()+
   facet_wrap(~Code)
+
+# sanity check
+# pop_data_and_catch %>%
+#   select(Code, catch_prop) %>%
+#   group_by(Code) %>%
+#   summarise(check = sum(catch_prop))
