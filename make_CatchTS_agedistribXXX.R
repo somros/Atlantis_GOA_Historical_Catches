@@ -49,3 +49,5 @@ pop_data_and_catch %>%
 #   select(Code, catch_prop) %>%
 #   group_by(Code) %>%
 #   summarise(check = sum(catch_prop))
+
+write.csv(pop_data_and_catch %>% select(Code, catch_prop), '../data/CatchTS_agedistribXXX.csv', row.names = F)
