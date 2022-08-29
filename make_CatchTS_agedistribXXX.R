@@ -19,6 +19,8 @@ library(tidyverse)
 # Read in selectivity
 selex <- read.csv('../data/selex_10_age_classes.csv')
 selex <- selex %>% select(Code, age_class, selex_age_class)
+# read in Atlantis fg
+atlantis_fg <- read.csv('../data/GOA_Groups.csv')
 # read in population data
 pop_data <- read.csv('C:/Users/Alberto Rovellini/Documents/GOA/Parametrization/build_init_prm_10COHORTS/data/nums_age_functional_groups.csv')
 
@@ -45,6 +47,18 @@ pop_data_and_catch %>%
   scale_x_continuous(breaks = seq(1,10,1))+
   theme_bw()+
   facet_wrap(~Code)
+
+# make figure for methods
+p <- pop_data_and_catch %>%
+  left_join(atlantis_fg %>% select(Code, Name), by = 'Code') %>%
+  ggplot()+
+  geom_bar(aes(x = age_class, y = catch_prop), stat = 'identity')+
+  scale_x_continuous(breaks = seq(1,10,1))+
+  theme_bw()+
+  labs(x = 'Age class', y = 'Proportion of biomass caught')+
+  facet_wrap(~Name)
+p
+ggsave('../methods/images/Selectivity_patterns_tier3_fg.png',p,width = 10, height = 4)
 
 # sanity check
 # pop_data_and_catch %>%
