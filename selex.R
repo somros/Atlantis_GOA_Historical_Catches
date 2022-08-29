@@ -100,15 +100,19 @@ these_species <- tier3_key$species
 colourCount = length(these_species)
 getPalette = colorRampPalette(brewer.pal(9, "Set1"))
 
-dat_long %>%
+p <- dat_long %>%
   filter(species %in% these_species) %>%
-  ggplot(aes(x = age, y = selex, color = species))+
-  geom_point(size = 2)+
-  geom_line(size  = 1.2)+
+  ggplot(aes(x = age, y = selex))+
+  geom_point()+
+  geom_line()+
   scale_colour_manual(values=getPalette(colourCount))+
-  scale_x_continuous(limits = c(0,30), breaks = c(0,30,5))+
+  #scale_x_continuous(limits = c(0,30), breaks = c(0,30,5))+
   theme_bw()+
-  labs(x = 'Age', y = 'Selectivity', color = '')
+  labs(x = 'Age', y = 'Selectivity', color = '')+
+  facet_wrap(~species, scales = 'free_x')#+
+  #theme(strip.background = element_rect(fill = NA))
+p
+ggsave('../methods/images/Selectivity_patterns_tier3.pdf',p,width = 10, height = 4)
 
 dat_long_10 %>%
   filter(species %in% these_species) %>%
