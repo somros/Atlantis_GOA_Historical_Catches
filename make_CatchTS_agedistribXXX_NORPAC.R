@@ -53,7 +53,7 @@ dat1 <- dat %>%
   left_join(key, by = 'Species.Name') %>%
   select(Year, Code, Length..cm., Frequency) %>%
   left_join(lh_pars %>% select(Code, Linf_FUNC, k_FUNC, a_FUNC, b_FUNC, tmax_Max_age), by = 'Code') %>%
-  mutate(Age = round(-log((Linf_FUNC - Length..cm.) / Linf_FUNC) / k_FUNC), # might want something different than round
+  mutate(Age = floor(-log(1 - Length..cm. / Linf_FUNC) / k_FUNC), # might want something different than round
          Weight_g = a_FUNC * Length..cm. ^ b_FUNC,
          Weight_age_g = Weight_g * Frequency) %>%
   rowwise() %>%
