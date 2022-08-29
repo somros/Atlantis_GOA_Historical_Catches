@@ -14,6 +14,8 @@
 # Also bear in mind that selectivity patterns vary in space
 # We will need to get halibut and salmon from somewhere else
 
+library(tidyverse)
+
 # Read in selectivity
 selex <- read.csv('../data/selex_10_age_classes.csv')
 selex <- selex %>% select(Code, age_class, selex_age_class)
@@ -50,4 +52,4 @@ pop_data_and_catch %>%
 #   group_by(Code) %>%
 #   summarise(check = sum(catch_prop))
 
-write.csv(pop_data_and_catch %>% select(Code, catch_prop), '../data/CatchTS_agedistribXXX.csv', row.names = F)
+# write.csv(pop_data_and_catch %>% select(Code, catch_prop), '../data/CatchTS_agedistribXXX.csv', row.names = F)
