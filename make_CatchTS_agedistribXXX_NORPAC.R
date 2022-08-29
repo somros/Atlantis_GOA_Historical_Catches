@@ -34,7 +34,8 @@ tier3_selex <- read.csv('../data/CatchTS_agedistribXXX.csv')
 unique(dat$NMFS.Area) # 630 610 620 640 621 631 650 # 621 used to indicate Shelikof St. Not sure about 631
 
 # How many data points do we have per species?
-dat %>% group_by(Species.Name) %>% tally() %>% arrange(desc(n))
+datapoints <- dat %>% group_by(Species.Name) %>% tally() %>% arrange(desc(n))
+datapoints
 
 # Map NORPAC species to Atlantis groups -----------------------------------
 # For all the Tier 3 species, we already have selectivity patterns (by age)
@@ -125,12 +126,16 @@ dat5 %>%
 dat6 <- dat5 %>%
   filter(Code %in% setdiff(unique(dat5$Code), unique(tier3_selex$Code)))
 
-dat6 %>%
+p <- dat6 %>%
   left_join(atlantis_fg %>% select(Code, Name), by = 'Code') %>%
+  filter(Name != 'Shark_demersal' & Name != 'Shark_pelagic') %>% # drop sharks, not enough data
   ggplot()+
   geom_bar(aes(x = Age_class, y = Prop), stat = 'identity')+
   theme_bw()+
+  labs(x = 'Age class', y = 'Proportion of biomass caught')+
   facet_wrap(~Name)
+p
+ggsave('../methods/images/Selectivity_patterns_tier4plus_fg.png',p,width = 10, height = 5)
 
 # there are also cases where this approach is misleading. For example, for sharks, the fact that bigger and older sharks
 # have not been caught / recorded does not mean that the fishery does not select for them
