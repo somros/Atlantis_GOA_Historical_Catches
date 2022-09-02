@@ -228,6 +228,9 @@ t <- catch_iphc_tot %>%
   ungroup() %>%
   select(-catch_mt, -prop)
 
+# tot catch
+t %>% group_by(year) %>% summarise(catch = sum(catch_mt_1)) %>% pull(catch) %>% max()
+
 # Allocate catch per area per year to each box
 # What do we do with catch that is taken from boundary boxes? Default behavior to allocate that to other boxes in the IPHC area
 t1 <- atlantis_iphc_key %>%
