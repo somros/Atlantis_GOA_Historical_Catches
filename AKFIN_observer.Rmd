@@ -17,6 +17,7 @@ library(viridis)
 library(maps)
 library(mapdata)
 library(data.table)
+library(RColorBrewer)
 ```
 
 ```{r}
@@ -53,20 +54,103 @@ obs <- obs %>% distinct()
 glimpse(obs)
 ```
 
-WHat is our minimal unit here? The haul is. Does it make any sense to model this with an sdmTMB approach, to produce sheets?
+The minimal unit in this data is the haul.
 
 Can we make sense of what "Extrapolated weight" means here? Does it mean biomass in the haul based on the sample? Sum these for each species within a haul, and compare with the official catch.
+
 ```{r}
-obs %>% group_by(Year,Haul.Join,Official.Total.Catch..mt.) %>% summarise(Tot.weight = sum(Extrapolated.Weight..kg.,na.rm=T)) %>% ungroup() %>% filter(Tot.weight!=0) %>% 
+obs %>% group_by(Year,Haul.Join,Official.Total.Catch..mt.) %>% 
+  summarise(Tot.weight = sum(Extrapolated.Weight..kg.,na.rm=T)) %>% 
+  ungroup() %>% 
+  #filter(Tot.weight!=0) %>% 
   #filter(Year==1989) %>%
   ggplot(aes(x=Official.Total.Catch..mt.,y=Tot.weight,color=factor(Year)))+
   theme_minimal()+
   geom_point()
 ```
 
-It appears that the extrapolated weight is the weight of this species in the haul, estimated from the sample taken from the haul. That is, an approximation of the catch in the haul.
+It appears that the extrapolated weight is the weight of of a species in a haul as estimated from the subsample taken by the observer. That is, an approximation of the catch in the haul. The 0's must mean no estimate was taken but a catch was still reported.
 
-Focus on one species.
+# Species, gears, targets
+
+Exploring what gears, targets, and species are explored in this data. This is useful to guide fleet structure determination.
+
+## Gears
+```{r}
+obs %>% pull(Gear.Description) %>% unique()
+```
+Of the gear definitions, 'NON PELAGIC" is interesting. Does it mean bottom trawl?
+
+## Targets
+
+These are identified as haul and trip target. It is not a simple definition - some boats change haul target on the same trip, some boats process at sea so the concept of "trip" is not so defined in space, and boats will have different targets on different trips.
+
+Here are haul targets:
+```{r}
+obs %>% pull(Haul_Target_Name) %>% unique() %>% sort()
+```
+
+And here are the trip targets:
+```{r}
+obs %>% pull(Trip_Target_Name) %>% unique() %>% sort()
+
+```
+
+How variable are haul targets within a trip target?
+```{r}
+# make plots for methods
+colourCount <- length(obs %>% pull(Haul_Target_Name) %>% unique())
+getPalette <- colorRampPalette(brewer.pal(12, "Paired"))
+
+p <- obs %>%
+  group_by(Trip_Target_Name, Haul_Target_Name) %>%
+  tally() %>%
+  drop_na() %>%
+  group_by(Trip_Target_Name) %>%
+  mutate(Prop = n/sum(n)) %>%
+  ungroup() %>%
+  ggplot()+
+  geom_bar(aes(x = Trip_Target_Name, y = Prop, fill = Haul_Target_Name), stat = 'identity')+
+  scale_fill_manual(values = getPalette(colourCount))+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 60,hjust = 1,size = 12))
+p
+
+ggsave('../output/graphics/fleets/trip_vs_haul_targets.png', p, width = 8, height = 6)
+
+
+```
+
+Hauls can have targets different from the trip.
+
+What are the target-gear combinations in the data? 
+```{r}
+combo <- obs %>%
+  filter(Trip_Target_Name != '') %>% # drop this for now - does ti mean that a target was not assigned?
+  mutate(Target_gear_combo = paste(Trip_Target_Name, Gear.Description, sep = '_')) %>%
+  group_by(Year, Target_gear_combo) %>%
+  summarise(Catch_mt = sum(Official.Total.Catch..mt.)) %>%
+  group_by(Target_gear_combo) %>%
+  summarise(Mean_annual_catch_mt = mean(Catch_mt)) %>%
+  ungroup() %>%
+  arrange(desc(Mean_annual_catch_mt))
+
+write.csv(combo, 'target_gear_combo.csv', row.names = F)
+
+p1 <- combo %>%
+  ggplot()+
+  geom_bar(aes(x = reorder(Target_gear_combo, -Mean_annual_catch_mt), y = Mean_annual_catch_mt), stat = 'identity')+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 60,hjust = 1,size = 12))
+
+p1
+ggsave('../output/graphics/fleets/target_gear_combinations.png', p1, width = 14, height = 5)
+  
+```
+
+Species are caught with different gears, but the most effective fisheries are the ones we know about (rockfish trawl, pollock pelagic trawl, PCod and sablefish longline, pcod trawl and pot, flatfish trawl, etc.). There are some weird cases (like Pollock - bottom_PELAGIC, which is it??).
+
+Finally, what species do we have data for?
 ```{r}
 all_species <- obs %>% select(Species.Name) %>% distinct() %>% arrange(Species.Name) %>% pull()
 all_species
@@ -75,6 +159,8 @@ obs_species <- obs %>% filter(Species.Name == "SABLEFISH (BLACKCOD)")
 ```
 
 It looks like each Haul.Join denotes one row only, so no need to aggregate further for the hauls.
+
+# Spatial resolution
 
 Look at this in space? Then sum it all up for a species and compare with catch data from AKFIN. This last step will need aggregation by area, which we have in this dataset so that should be possible.
 ```{r}
@@ -104,11 +190,51 @@ obs_species_thin_sf %>% #filter(Year==2015) %>%
   labs(title = paste('Hauls from Observer data for',obs_species_thin_sf$Species.Name[1],sep = ' '))
 ```
 
-At first glance, these do not cover all boxes. We need to look up sources for this and ask how the catch for other vessels is extrapolated.
-
-Read in catch data, and subset to the same years. Note that this is commercial catch, not catch from the bottom trawl surveys.
+Is there a spatial footprint of fishing fleets?
 ```{r}
-catch <- read.csv("AKFIN/Catch/Groundfish Total Catch.csv", fileEncoding = 'UTF-8-BOM')
+top_fleets <- combo %>% slice_head(n = 8) %>% pull(Target_gear_combo) 
+
+for(i in 1:length(top_fleets)){
+  this_fleet <- top_fleets[i]
+  
+  p2 <- obs %>%
+    filter(Trip_Target_Name != '') %>% # drop this for now - does ti mean that a target was not assigned?
+    mutate(Target_gear_combo = paste(Trip_Target_Name, Gear.Description, sep = '_')) %>% 
+    filter(Target_gear_combo == this_fleet & Official.Total.Catch..mt. > 0) %>%
+    st_as_sf(coords = c(x = 'Lon.DD.End', y='Lat.DD.End'), crs=4326) %>%
+    ggplot()+
+    geom_sf(aes(color=log1p(Official.Total.Catch..mt.)))+
+    geom_sf(data = coast_sf)+
+    coord_sf(xlim = c(obs_bbox$xmin,obs_bbox$xmax), ylim = c(obs_bbox$ymin,obs_bbox$ymax))+
+    scale_color_viridis()+
+    theme_bw()+
+    facet_wrap(~Year, ncol = 4)+
+    labs(title = this_fleet)
+  
+  ggsave(paste0('../output/graphics/fleets/',this_fleet, '.png'), p2, width = 10, height = 14)
+  
+}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+# Comparison with catch data
+
+Catch estimates from the AKRO/BLEND Catch Accounting system integrate observer data, tickets, logbook data, etc. Comparing the two is probably not meaningful.
+
+Read in catch data, and subset to the same years.
+```{r}
+catch <- read.csv("../data/AKFIN/Catch/Groundfish Total Catch.csv", fileEncoding = 'UTF-8-BOM')
 
 catch_species <- catch %>% filter(Species.Group.Name == 'Pollock')
 catch_species <- catch_species %>% filter(Year %in% (obs_species_thin %>% select(Year) %>% distinct() %>% pull()))
@@ -119,9 +245,9 @@ catch_species <- catch_species %>% filter(Retained.Discarded=='Retained')
 
 Add these up by year and area and see how they plot.
 ```{r}
-obs_species_by_area <- obs_species_thin %>% group_by(Year,NMFS.Area) %>% summarise(Area.Catch.Obs = sum(Extrapolated.Weight..kg.))
+obs_species_by_area <- obs_species_thin %>% group_by(Year,NMFS.Area) %>% summarise(Area.Catch.Obs = sum(Official.Total.Catch..mt.))
 
-catch_species_by_area <- catch_species %>% group_by(Year,NMFS.Area) %>% summarise(Area.Catch.Catch = sum(Catch..mt.*1000))
+catch_species_by_area <- catch_species %>% group_by(Year,NMFS.Area) %>% summarise(Area.Catch.Catch = sum(Catch..mt.))
 
 # join
 
@@ -133,23 +259,8 @@ catch_comp %>%
   geom_abline(intercept = 0,slope=1)+
   theme_minimal()
 ```
-Weak relationship, but not as straight-forward as summing up the observer data. The observer data seems to report lower catches than the catch data set. Need to read about this and see how the observer data feed into the catch data, if at all. As it stands, it looks like the observer data will not be too helpful in mapping catch data to individual boxes - not year by year. I also expect this to be variable between species.
+
 
 The catch data are from /Catch Accounting System. From [the CAS webpage](https://www.fisheries.noaa.gov/inport/item/21988), we read: *"The CAS uses a combination of industry reports and onboard observer information to provide an estimate of total catch and bycatch. Industry reported data consists of catch (landing reports) and processed product amounts (production reports), and these reports are electronically recorded and submitted to NMFS via eLandings. Other sources of information come from the Alaska Commercial Fisheries Entry Commission (CFEC), which issues permits and vessel licenses, and Vessel Monitoring Systems (VMS), which collect the position, time at a position, and course and speed of fishing vessels."*. Similarly, anout [BLEND](https://www.fisheries.noaa.gov/inport/item/11812): *"The Blend system used a combination of industry reports and observer data. For shoreside processors, Weekly Production Reports (WPR) submitted by industry were considered the best source of data for retained groundfish landings. All fish delivered to shoreside processors were weighed on scales, and these weights were used to account for retained catch. Observer data from catcher vessels provided the best data on at-sea discards of groundfish by vessels delivering to shoreside processors. Discard rates from these observer data were applied to the shoreside groundfish landings to estimate total at-sea discards from both observed and unobserved catcher vessels. For observed catcher/processors and motherships, the WPR and the Observer Reports recorded estimates of total catch (retained catch plus discards). If both reports were available, the Blend System selected one of them for incorporation into the catch database. If the vessel was unobserved, only the WPR was available."*.
 
 The way people go from observer data to catch data was described to me as a "black box", so not sure there is hope for us to cleanly convert between the two here. There seem to be a correlation between them, at least. We may try and run this functionally for all species and see of there is a correlation, and then simply apportion the catch from the "Catch By Fishery" data frame to the boxes (where possible) based on whatever little data we have from this observer database.
-
-Check gears.
-```{r}
-catch %>% select(Gear) %>% distinct() %>% pull()
-obs %>% select(Gear.Description) %>% distinct() %>% pull()
-```
-Gears have different nomenclatures and are therefore difficult to pair up.
-
-```{r}
-glimpse(catch)
-```
-```{r}
-glimpse(obs)
-```
-
