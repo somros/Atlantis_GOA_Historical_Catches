@@ -1,7 +1,7 @@
 ---
 title: "Observer data"
 author: "Alberto Rovellini"
-date: "8/6/2021"
+date: "9/13/2022"
 output: html_document
 ---
 
@@ -38,9 +38,11 @@ This document explores observer data from [AKFIN](https://akfinbi.psmfc.org/anal
 
 There seem to be some issues with AKFIN not picking the correct years that we select. Let's use distinct().
 
+Note: as of September 2022, NORPAC Observer Catch Report data contains haul and trip target fields.
+
 Read data.
 ```{r}
-all_files <- list.files('AKFIN/Observer/',full.names = TRUE)
+all_files <- list.files('../data/AKFIN/Observer_2022/',full.names = TRUE)
 obs_list <- lapply(all_files, read.csv, skip=6)
 
 obs <- rbindlist(obs_list)
