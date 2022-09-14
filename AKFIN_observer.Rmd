@@ -192,7 +192,7 @@ obs_species_thin_sf %>% #filter(Year==2015) %>%
 
 Is there a spatial footprint of fishing fleets?
 ```{r}
-top_fleets <- combo %>% slice_head(n = 8) %>% pull(Target_gear_combo) 
+top_fleets <- combo %>% slice_head(n = 16) %>% pull(Target_gear_combo) 
 
 for(i in 1:length(top_fleets)){
   this_fleet <- top_fleets[i]
@@ -208,29 +208,19 @@ for(i in 1:length(top_fleets)){
     coord_sf(xlim = c(obs_bbox$xmin,obs_bbox$xmax), ylim = c(obs_bbox$ymin,obs_bbox$ymax))+
     scale_color_viridis()+
     theme_bw()+
-    facet_wrap(~Year, ncol = 4)+
+    facet_wrap(~Year, ncol = 3)+
     labs(title = this_fleet)
   
-  ggsave(paste0('../output/graphics/fleets/',this_fleet, '.png'), p2, width = 10, height = 14)
+  ggsave(paste0('../output/graphics/fleets/',this_fleet, '.png'), p2, width = 10, height = 13)
   
 }
-
 ```
 
-
-
-
-
-
-
-
-
-
-
+Spatial footprint of fleets in the GOA is complex. Many vessels come from outside the GOA, and fish all over, and land all over. Considering the first 8 fisheries only in terms of average annual catch, in the EGOA we seem to only have a footprint of sablefish longliners.   
 
 # Comparison with catch data
 
-Catch estimates from the AKRO/BLEND Catch Accounting system integrate observer data, tickets, logbook data, etc. Comparing the two is probably not meaningful.
+__Catch estimates from the AKRO/BLEND Catch Accounting system integrate observer data, tickets, logbook data, etc. Comparing the two is probably not meaningful.__
 
 Read in catch data, and subset to the same years.
 ```{r}
