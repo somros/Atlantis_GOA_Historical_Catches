@@ -138,13 +138,16 @@ combo <- obs %>%
 write.csv(combo, 'target_gear_combo.csv', row.names = F)
 
 p1 <- combo %>%
+  slice_head(n = 20) %>%
   ggplot()+
-  geom_bar(aes(x = reorder(Target_gear_combo, -Mean_annual_catch_mt), y = Mean_annual_catch_mt), stat = 'identity')+
+  geom_bar(aes(x = reorder(Target_gear_combo, Mean_annual_catch_mt), y = Mean_annual_catch_mt), stat = 'identity')+
   theme_bw()+
-  theme(axis.text.x = element_text(angle = 60,hjust = 1,size = 12))
+  coord_flip()+
+  labs(y = 'Catch (mt)', x = 'Target-gear combination', 
+       title = 'Mean annual total official catch by gear-target \ncombination (NORPAC Catch Report Data)')
 
 p1
-ggsave('../output/graphics/fleets/target_gear_combinations.png', p1, width = 14, height = 5)
+ggsave('../output/graphics/fleets/target_gear_combinations.png', p1, width = 7, height = 7)
   
 ```
 
