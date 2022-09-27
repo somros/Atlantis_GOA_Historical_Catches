@@ -1,0 +1,151 @@
+---
+title: "Fish Tickets"
+author: "Alberto Rovellini"
+date: "9/26/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(rbgm)
+library(sf)
+library(viridis)
+library(maps)
+library(mapdata)
+library(data.table)
+library(RColorBrewer)
+library(lubridate)
+```
+
+This code explores the Fish Ticket data obtained from AKFIN Answers with New --> Analysis --> Fish Tickets.
+I seem to have problem downloading the entire data set (possibly too large), so breaking it down in a few 8-yr chunks (TODO: need to do smaller, say 7 years, some days get cut off - all sets have suspiciously same number of rows)
+
+Read data.
+```{r}
+dat1 <- read.csv('../data/AKFIN/Fish_Tickets/Fish_Tickets_v1_1991-1998.csv', fileEncoding = 'UTF-8-BOM')
+dat2 <- read.csv('../data/AKFIN/Fish_Tickets/Fish_Tickets_v1_1999-2006.csv', fileEncoding = 'UTF-8-BOM')
+dat3 <- read.csv('../data/AKFIN/Fish_Tickets/Fish_Tickets_v1_2007-2014.csv', fileEncoding = 'UTF-8-BOM')
+dat4 <- read.csv('../data/AKFIN/Fish_Tickets/Fish_Tickets_v1_2015-2020.csv', fileEncoding = 'UTF-8-BOM')
+
+# dat4 %>% pull(Date.Landed) %>% unique() %>% min(na.rm=T)
+# dat4 %>% pull(Date.Landed) %>% unique() %>% max(na.rm=T)
+
+dat <- rbind(dat1, dat2, dat3, dat4)
+glimpse(dat)
+```
+
+Some data cleaning and general information.
+```{r}
+datXXX <- dat %>% 
+  filter(!is.na(Date.Landed)) %>%
+  arrange(Date.Landed) %>%
+  distinct() %>%
+  mutate(Date.Landed = as.Date(as.character(Date.Landed), '%Y%m%d'),
+         Year.Landed = year(Date.Landed))
+```
+
+For plotting purposes below and general overview, let's extract the dominant ports and species.
+```{r}
+# top ports by landings (annual averages)
+top_ports <- datXXX %>%
+  group_by(Year.Landed, Port.Name) %>%
+  summarise(Landed.t = sum(Pounds..Detail.)*0.454/1000000) %>%
+  group_by(Port.Name) %>%
+  summarise(Landed.t = mean(Landed.t)) %>%
+  arrange(desc(Landed.t)) %>%
+  slice(1:25) %>%
+  pull(Port.Name)
+
+# top species for average landings per year (regardless of port)
+top_species <- datXXX %>%
+  group_by(Year.Landed, Species.Common.Name) %>%
+  summarise(Landed.t = sum(Pounds..Detail.)*0.454/1000000) %>%
+  group_by(Species.Common.Name) %>%
+  summarise(Landed.t = mean(Landed.t)) %>%
+  arrange(desc(Landed.t)) %>%
+  slice(1:25) %>%
+  pull(Species.Common.Name)
+
+```
+
+# Ports
+
+What are the main ports in terms of landings? And in terms of revenues? And how does that change over time?
+Can this help us with our fleets? Is there anything that can be said about gear / target and port combinations? How do we map ports to the fisheries that we already have? And can we map statistical areas to ports?
+```{r}
+byport <- datXXX %>%
+  filter(Port.Name %in% top_ports) %>%
+  group_by(Year.Landed, Port.Name) %>%
+  summarise(Landed.t = sum(Pounds..Detail.)*0.454/1000000,
+            Revenue = sum(Pounds..Detail.*CFEC.Price.per.Pound)) %>%
+  group_by(Port.Name) %>%
+  summarise(Landed.t = mean(Landed.t),
+            Revenue = sum(Revenue)) %>%
+  ungroup() %>%
+  arrange(desc(Landed.t)) %>%
+  mutate(Port.Name = factor(Port.Name, levels = unique(top_ports))) %>%
+  pivot_longer(-Port.Name, names_to = 'Variable', values_to = 'Value')
+
+byport %>%
+  ggplot()+
+  geom_bar(aes(x = forcats::fct_rev(Port.Name), y = Value), stat = 'identity')+
+  coord_flip()+
+  theme_bw()+
+  facet_wrap(~Variable, scales = 'free_x')+
+  labs(x = '', y = 'Port', title = 'Mean annual landings (t) and resulting revenues \n ($) based on CFEC PPP from fish tickets')
+
+```
+
+Temporal changes in total landing per port. Only view the 25 "largest" ports - see above. 
+```{r}
+byport_temp <- datXXX %>%
+  group_by(Year.Landed, Port.Name) %>%
+  summarise(Landed.t = sum(Pounds..Detail.)*0.454/1000000)
+
+byport_temp %>%
+  filter(Port.Name %in% top_ports) %>%
+  ggplot()+
+  geom_line(aes(x = Year.Landed, y = Landed.t))+
+  theme_bw()+
+  facet_wrap(~Port.Name, scales = 'free_y')+
+  labs(x = '', y = 'Landings (t)', title = 'Mean annual landings (t)\n')
+  
+```
+
+Which species are landed the most at each port? 
+```{r}
+byport_species <- datXXX %>%
+  filter(Port.Name %in% top_ports, Species.Common.Name %in% top_species) %>%
+  group_by(Year.Landed, Port.Name, Species.Common.Name) %>%
+  summarise(Landed.t = sum(Pounds..Detail.)*0.454/1000000,
+            Revenue = sum(Pounds..Detail.*CFEC.Price.per.Pound)) %>%
+  group_by(Port.Name, Species.Common.Name) %>%
+  summarise(Landed.t = mean(Landed.t),
+            Revenue = sum(Revenue)) %>%
+  ungroup() %>%
+  arrange(desc(Landed.t)) %>%
+  mutate(Port.Name = factor(Port.Name, levels = unique(Port.Name))) %>%
+  pivot_longer(-c(Port.Name, Species.Common.Name), names_to = 'Variable', values_to = 'Value')
+
+byport_species %>%
+  ggplot()+
+  geom_bar(aes(x = Port.Name, y = Value, fill = Species.Common.Name), stat = 'identity', position = position_stack())+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))+
+  facet_wrap(~Variable, scales = 'free_y')+
+  labs(x = '', y = 'Port', title = 'Mean annual landings (t) and resulting revenues ($) based on CFEC PPP from fish tickets')
+
+```
+
+What Stat areas are matched to which port, if any?
+```{r}
+
+```
+
+# Spatial features of reported fishing
+
+Are there any patterns as to where each species has been caught over time?
