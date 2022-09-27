@@ -19,7 +19,13 @@ library(mapdata)
 library(data.table)
 library(RColorBrewer)
 library(lubridate)
+library(readxl)
 ```
+
+```{r}
+select <- dplyr::select
+```
+
 
 This code explores the Fish Ticket data obtained from AKFIN Answers with New --> Analysis --> Fish Tickets.
 I seem to have problem downloading the entire data set (possibly too large), so breaking it down in a few 8-yr chunks (TODO: need to do smaller, say 7 years, some days get cut off - all sets have suspiciously same number of rows)
@@ -31,24 +37,56 @@ dat2 <- read.csv('../data/AKFIN/Fish_Tickets/Fish_Tickets_v1_1999-2006.csv', fil
 dat3 <- read.csv('../data/AKFIN/Fish_Tickets/Fish_Tickets_v1_2007-2014.csv', fileEncoding = 'UTF-8-BOM')
 dat4 <- read.csv('../data/AKFIN/Fish_Tickets/Fish_Tickets_v1_2015-2020.csv', fileEncoding = 'UTF-8-BOM')
 
-# dat4 %>% pull(Date.Landed) %>% unique() %>% min(na.rm=T)
-# dat4 %>% pull(Date.Landed) %>% unique() %>% max(na.rm=T)
-
 dat <- rbind(dat1, dat2, dat3, dat4)
 glimpse(dat)
 ```
 
+Other data and look up tables for gear and targets.
+```{r}
+# this table is from the eLandings user guide https://elandings.atlassian.net/wiki/spaces/doc/overview
+gears <-read_xls('../data/AKFIN/Fish_Tickets/ALLGEAR.XLS', sheet = 1, range = 'A2:I47')
+colnames(gears)[1] <- 'Gear.Code'
+gears <- gears %>% 
+  select(Gear.Code, Description) %>%
+  distinct() %>%
+  drop_na()
+
+
+# this table is from the BLEND CAS data, queried as Analysis from AKFIN Answers and only selecting target and gear dimension fields
+targets <- read.csv('../data/AKFIN/Fish_Tickets/Target_codes_BLEND.csv', fileEncoding = 'UTF-8-BOM')
+targets <- targets %>%
+  select(Trip.Target.Code:Trip.Target.Name) %>%
+  distinct() %>%
+  arrange(Trip.Target.Code)
+```
+
 Some data cleaning and general information.
 ```{r}
+# add column for year
 datXXX <- dat %>% 
   filter(!is.na(Date.Landed)) %>%
   arrange(Date.Landed) %>%
   distinct() %>%
   mutate(Date.Landed = as.Date(as.character(Date.Landed), '%Y%m%d'),
          Year.Landed = year(Date.Landed))
+
+# join with gear codes to add gear description
+datXXX <- datXXX %>%
+  left_join(gears, by = 'Gear.Code')
+
+# join with target species 
+datXXX <- datXXX %>% 
+  left_join(targets, by = c('Groundfish.Weekly.Target'='Trip.Target.Code'))
 ```
 
-For plotting purposes below and general overview, let's extract the dominant ports and species.
+List the ports, the gears, and the targets.
+```{r}
+datXXX %>% pull(Port.Name) %>% unique() %>% sort()
+datXXX %>% pull(Trip.Target.Name) %>% unique() %>% sort()
+datXXX %>% pull(Description) %>% unique() %>% sort()
+```
+
+For plotting purposes below and general overview, let's extract the dominant ports and species that are reported on the fish ticket.
 ```{r}
 # top ports by landings (annual averages)
 top_ports <- datXXX %>%
@@ -70,6 +108,8 @@ top_species <- datXXX %>%
   slice(1:25) %>%
   pull(Species.Common.Name)
 
+top_ports
+top_species
 ```
 
 # Ports
@@ -84,7 +124,7 @@ byport <- datXXX %>%
             Revenue = sum(Pounds..Detail.*CFEC.Price.per.Pound)) %>%
   group_by(Port.Name) %>%
   summarise(Landed.t = mean(Landed.t),
-            Revenue = sum(Revenue)) %>%
+            Revenue = mean(Revenue)) %>%
   ungroup() %>%
   arrange(desc(Landed.t)) %>%
   mutate(Port.Name = factor(Port.Name, levels = unique(top_ports))) %>%
@@ -100,6 +140,8 @@ byport %>%
 
 ```
 
+Kodiak seems to be the port receiving most revenues from the GOA. Some of the catch goes to ports outside the GOA, including Seattle, but it does not seem to be a large proportion. Quite a few blanks and missing/unknown values. Some of the catch goes to floating catcher processors, inshore floating processors, floating domestic motherships.
+
 Temporal changes in total landing per port. Only view the 25 "largest" ports - see above. 
 ```{r}
 byport_temp <- datXXX %>%
@@ -113,11 +155,17 @@ byport_temp %>%
   theme_bw()+
   facet_wrap(~Port.Name, scales = 'free_y')+
   labs(x = '', y = 'Landings (t)', title = 'Mean annual landings (t)\n')
-  
+
 ```
 
+Fluctuations in every port and no clear trend in terms of weight of landings.
+
 Which species are landed the most at each port? 
-```{r}
+```{r, fig.width=12, fig.height=8}
+# make plots for methods
+colourCount <- length(top_species)
+getPalette <- colorRampPalette(brewer.pal(12, "Paired"))
+
 byport_species <- datXXX %>%
   filter(Port.Name %in% top_ports, Species.Common.Name %in% top_species) %>%
   group_by(Year.Landed, Port.Name, Species.Common.Name) %>%
@@ -125,7 +173,7 @@ byport_species <- datXXX %>%
             Revenue = sum(Pounds..Detail.*CFEC.Price.per.Pound)) %>%
   group_by(Port.Name, Species.Common.Name) %>%
   summarise(Landed.t = mean(Landed.t),
-            Revenue = sum(Revenue)) %>%
+            Revenue = mean(Revenue)) %>%
   ungroup() %>%
   arrange(desc(Landed.t)) %>%
   mutate(Port.Name = factor(Port.Name, levels = unique(Port.Name))) %>%
@@ -134,18 +182,236 @@ byport_species <- datXXX %>%
 byport_species %>%
   ggplot()+
   geom_bar(aes(x = Port.Name, y = Value, fill = Species.Common.Name), stat = 'identity', position = position_stack())+
+  scale_fill_manual(values = getPalette(colourCount))+
   theme_bw()+
-  theme(axis.text.x = element_text(angle = 60, hjust = 1))+
+  theme(axis.text.x = element_text(angle = 60, hjust = 1, vjust = 1))+
   facet_wrap(~Variable, scales = 'free_y')+
   labs(x = '', y = 'Port', title = 'Mean annual landings (t) and resulting revenues ($) based on CFEC PPP from fish tickets')
 
 ```
 
-What Stat areas are matched to which port, if any?
-```{r}
+Same figure but as relative proportions.
+```{r, fig.width=12, fig.height=8}
+byport_species %>%
+  group_by(Port.Name, Variable) %>%
+  mutate(Prop = Value/sum(Value)) %>%
+  ungroup() %>%
+  ggplot()+
+  geom_bar(aes(x = Port.Name, y = Prop, fill = Species.Common.Name), stat = 'identity', position = position_stack())+
+  scale_fill_manual(values = getPalette(colourCount))+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))+
+  facet_wrap(~Variable, scales = 'free_y')+
+  labs(x = '', y = 'Port', title = 'Mean annual landings (t) and resulting revenues ($) based on CFEC PPP from fish tickets')
+```
 
+# Target-gear and port combinations
+
+Does anything meaningful come up if we combine target, gear, and port of landing?
+We use landings instead of revenues as a metric to identify the largest fisheries and ports because in Atlantis we deal mostly with removals (for now).
+
+Careful - target definitions only apply to groundfish.
+
+First - what's with salmon's gear and targets?
+```{r}
+datXXX %>%
+  mutate(Target.Gear = paste(Trip.Target.Name, Description, sep = ' - ')) %>%
+  filter(grepl('salmon', Species.Common.Name)) %>%
+  group_by(Trip.Target.Group) %>%
+  tally() %>%
+  arrange(desc(n)) %>%
+  mutate(prop = n/sum(n)*100)
+
+datXXX %>%
+  mutate(Target.Gear = paste(Trip.Target.Name, Description, sep = ' - ')) %>%
+  filter(Trip.Target.Name == '') %>%
+  group_by(Species.Common.Name) %>%
+  tally() %>%
+  arrange(desc(n)) %>%
+  mutate(prop = n/sum(n)*100)
+```
+99% of the landed salmon is labeled with Trip.Target.Name = " ", and 'Trip.Target.Group = "No Retained Groundfish". It is a substantial part of the data, so keep this. Replacing ' ' with salmon would be misleading - I do not understand whether salmon is ever targeted. 
+
+All non-groundfish and state-managed species, including the crabs, are labeled with Trip.Target.Name = " ". We need to tease those apart but there are a lot.
+
+Only consider top 25 ports in terms of landings. Assign each ticket to a decade too, and use decades for summaries (as facets probably).
+```{r}
+target_gear_combo <- datXXX %>%
+  filter(Port.Name %in% top_ports) %>%
+  rowwise() %>%
+  mutate(Period = ifelse(Year.Landed < 2001, '1991-2000', 
+                         ifelse(Year.Landed < 2011, '2001-2010', '2011-2020'))) %>%
+  ungroup() %>%
+  #filter(Groundfish.Weekly.Target != '') %>% # this removes salmon
+  mutate(Trip.Target.Name = na_if(Trip.Target.Name, ''),
+         Target.Gear = paste(Trip.Target.Name, Description, sep = ' - ')) %>%
+  group_by(Period, Port.Name, Year.Landed, Target.Gear, Species.Common.Name) %>%
+  summarise(Landed.t = sum(Pounds..Detail.)*0.454/1000000) %>%
+  group_by(Period, Port.Name, Target.Gear, Species.Common.Name) %>%
+  summarise(Landed.t = mean(Landed.t)) %>%
+  arrange(Period, Port.Name, desc(Landed.t)) %>%
+  group_by(Period, Port.Name) %>%
+  mutate(Prop.Landings = Landed.t/sum(Landed.t),
+         Cumu.Prop = cumsum(Prop.Landings)) %>%
+  ungroup() %>%
+  filter(Cumu.Prop < 0.95)
+```
+
+```{r}
+# make some plots as output - one per target-gear combination for readability
+these_combos <- target_gear_combo %>% pull(Target.Gear) %>% unique()
+
+for(i in 1: length(these_combos)) {
+  
+  # write this without slash for the path name when saving the image
+  for_path <- gsub('/','--',these_combos[i])
+  
+  # pull data for this species only
+  this_set <- target_gear_combo %>%
+    filter(Target.Gear == these_combos[i])
+  
+  # what species do we have?
+  these_species <- this_set %>% pull(Species.Common.Name) %>% unique()
+  
+  # change colors - they will be different between plots
+  colourCount <- length(these_species)
+  getPalette <- colorRampPalette(brewer.pal(12, "Paired"))
+  
+  p <- this_set %>%
+    ggplot()+
+    geom_bar(aes(x = Port.Name, y = Landed.t, fill = Species.Common.Name), stat = 'identity')+
+    scale_fill_manual(values = getPalette(colourCount))+
+    theme_bw()+
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+    labs(title = these_combos[i], x = 'Port of landing', y = 'Annual landings (t)')+
+    facet_wrap(~Period)
+  
+  ggsave(paste0('../output/graphics/fleets/from_fish_tickets/by_fishery/',for_path,'.png'),p,width = 12,height = 6)
+  
+}
+```
+
+Do the same but by port instead of by fishery.
+```{r}
+# make some plots as output - one per target-gear combination for readability
+these_ports <- target_gear_combo %>% pull(Port.Name) %>% unique()
+
+for(i in 1: length(these_ports)) {
+  
+  # write this without slash for the path name when saving the image
+  for_path <- gsub('/','--',these_ports[i])
+  
+  # pull data for this species only
+  this_set <- target_gear_combo %>%
+    filter(Port.Name == these_ports[i])
+  
+  # what species do we have?
+  these_species <- this_set %>% pull(Species.Common.Name) %>% unique()
+  
+  # change colors - they will be different between plots
+  colourCount <- length(these_species)
+  getPalette <- colorRampPalette(brewer.pal(12, "Paired"))
+  
+  p <- this_set %>%
+    ggplot()+
+    geom_bar(aes(x = Target.Gear, y = Landed.t, fill = Species.Common.Name), stat = 'identity')+
+    scale_fill_manual(values = getPalette(colourCount))+
+    theme_bw()+
+    theme(axis.text.x = element_text(angle = 60, hjust = 1))+
+    labs(title = these_ports[i], x = 'Target-gear combination', y = 'Annual landings (t)')+
+    facet_wrap(~Period)
+  
+  ggsave(paste0('../output/graphics/fleets/from_fish_tickets/by_port/',for_path,'.png'),p,width = 14,height = 8)
+  
+}
 ```
 
 # Spatial features of reported fishing
 
-Are there any patterns as to where each species has been caught over time?
+First, we need a map of the statistical areas. For groundfish, there is a downloadable shapefile on the [ADF&G website](https://alaska-department-of-fish-and-game-adfg.hub.arcgis.com/datasets/groundfish-statistical-areas-2001/explore?location=27.354454%2C0.000000%2C2.66). 
+
+```{r}
+gf_areas <- st_read('../data/AKFIN/Fish_Tickets/Groundfish_Statistical_Areas_2001/PVG_Statewide_2001_Present_GCS_WGS1984.shp')
+
+gf_areas <- gf_areas %>%
+  filter(FMP_AREA_C == 'GOA') %>%
+  select(STAT_AREA)
+
+gf_areas %>% ggplot()+geom_sf()+theme_bw()
+```
+
+Join this with the ticket data. Aggregate landings by year and stat area (all species).
+```{r}
+tmp1 <- datXXX %>%
+  filter(Groundfish.Weekly.Target != '') %>% # this removes salmon, and we need it here because the ADF&G GF areas only apply to gf
+  rowwise() %>%
+  mutate(Period = ifelse(Year.Landed < 2001, '1991-2000', 
+                         ifelse(Year.Landed < 2011, '2001-2010', '2011-2020'))) %>%
+  ungroup() %>%
+  mutate(Trip.Target.Name = na_if(Trip.Target.Name, ''),
+         Target.Gear = paste(Trip.Target.Name, Description, sep = ' - ')) %>%
+  group_by(Period, Statistical.Area, Year.Landed, Target.Gear) %>% #, Species.Common.Name) %>%
+  summarise(Landed.t = sum(Pounds..Detail.)*0.454/1000000) %>%
+  group_by(Period, Statistical.Area, Target.Gear) %>% #, Species.Common.Name) %>%
+  summarise(Landed.t = mean(Landed.t)) %>%
+  arrange(Period, Statistical.Area, desc(Landed.t)) %>%
+  group_by(Period, Statistical.Area) %>%
+  mutate(Prop.Landings = Landed.t/sum(Landed.t),
+         Cumu.Prop = cumsum(Prop.Landings)) %>%
+  ungroup() %>%
+  filter(Cumu.Prop < 0.95)
+
+target_gear_areas <- gf_areas %>%
+  full_join(tmp1, by = c('STAT_AREA'='Statistical.Area')) %>%
+  filter(!is.na(Period))
+```
+
+View in space. Limit this to the target-gear combinations we explored above.
+```{r}
+# add coastline
+obs_bbox <- target_gear_areas %>% st_bbox()
+
+coast <- maps::map("worldHires", c("USA","Canada"), plot = FALSE, fill = TRUE)
+coast_sf <- coast %>% st_as_sf() #%>% st_transform(crs = atlantis_crs)
+
+t <- target_gear_areas %>%
+  filter(Target.Gear == "NA - Purse seine")
+
+for(i in 1:length(these_combos)){
+  
+  #print(paste('doing',these_combos[i]))
+  
+  # write this without slash for the path name when saving the image
+  for_path <- gsub('/','--',these_combos[i])
+  
+  # pull data for this species only
+  this_set <- target_gear_areas %>%
+    filter(Target.Gear == these_combos[i])
+  
+  if(nrow(this_set)>0){
+    p <- this_set %>%
+    ggplot()+
+    geom_sf(aes(fill = Landed.t))+
+    geom_sf(data = coast_sf)+
+    coord_sf(xlim = c(obs_bbox$xmin,obs_bbox$xmax), ylim = c(obs_bbox$ymin,obs_bbox$ymax))+
+    scale_fill_viridis()+
+    theme_bw()+
+    facet_wrap(~Period, ncol = 1)+
+    labs(title = these_combos[i])
+  
+  ggsave(paste0('../output/graphics/fleets/from_fish_tickets/by_area/',for_path,'.png'),p,width = 8,height = 12)
+    
+  }
+  
+}
+
+```
+
+We need salmon statistical areas from ADF&G.
+
+
+Let's map the ports. 
+```{r}
+write.csv(data.frame('Port'=top_ports), '../data/AKFIN/Fish_Tickets/ports.csv', row.names = F)
+```
+
