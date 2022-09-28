@@ -20,6 +20,7 @@ library(data.table)
 library(RColorBrewer)
 library(lubridate)
 library(readxl)
+library(ggalluvial)
 ```
 
 ```{r}
@@ -390,28 +391,94 @@ for(i in 1:length(these_combos)){
   
   if(nrow(this_set)>0){
     p <- this_set %>%
-    ggplot()+
-    geom_sf(aes(fill = Landed.t))+
-    geom_sf(data = coast_sf)+
-    coord_sf(xlim = c(obs_bbox$xmin,obs_bbox$xmax), ylim = c(obs_bbox$ymin,obs_bbox$ymax))+
-    scale_fill_viridis()+
-    theme_bw()+
-    facet_wrap(~Period, ncol = 1)+
-    labs(title = these_combos[i])
-  
-  ggsave(paste0('../output/graphics/fleets/from_fish_tickets/by_area/',for_path,'.png'),p,width = 8,height = 12)
+      ggplot()+
+      geom_sf(aes(fill = Landed.t))+
+      geom_sf(data = coast_sf)+
+      coord_sf(xlim = c(obs_bbox$xmin,obs_bbox$xmax), ylim = c(obs_bbox$ymin,obs_bbox$ymax))+
+      scale_fill_viridis()+
+      theme_bw()+
+      facet_wrap(~Period, ncol = 1)+
+      labs(title = these_combos[i])
+    
+    ggsave(paste0('../output/graphics/fleets/from_fish_tickets/by_area/',for_path,'.png'),p,width = 8,height = 12)
     
   }
   
 }
+```
+
+TODO: We need salmon statistical areas from ADF&G.
+
+Let's map the ports. 
+```{r, fig.width=12, fig.height=6}
+#write.csv(data.frame('Port'=top_ports), '../data/AKFIN/Fish_Tickets/ports.csv', row.names = F)
+ports <- read.csv('../data/AKFIN/Fish_Tickets/ports_coords.csv')
+
+ports <- ports %>% 
+  drop_na() %>%
+  st_as_sf(coords = c('Lon', 'Lat'), crs = 4326)
+
+port_bbox <- ports %>% st_bbox()
+
+
+ggplot()+
+  geom_sf(data = coast_sf)+
+  geom_sf(data = ports, size = 2, color = 'magenta')+
+  ggrepel::geom_label_repel(
+    data = ports,
+    aes(label = Port, geometry = geometry),
+    stat = "sf_coordinates",
+    min.segment.length = 0,
+    label.size = 0.1,
+    segment.colour = 'magenta'
+  )+
+  theme_bw()+
+  coord_sf(xlim = c(port_bbox$xmin,port_bbox$xmax), ylim = c(port_bbox$ymin,port_bbox$ymax))+
+  labs(title = 'AK ports with highest mean annual (1991-2020) landings according to Fish Ticket data',
+       x = '', y = '')
 
 ```
 
-We need salmon statistical areas from ADF&G.
+Do the fisheries and their areas map to specific ports? We have a few way to look at this.
 
-
-Let's map the ports. 
+Add up landings by NMFS area and by port and see which ports dominate which stat area. Limit this to the top ports.
 ```{r}
-write.csv(data.frame('Port'=top_ports), '../data/AKFIN/Fish_Tickets/ports.csv', row.names = F)
+nmfs_to_port <- datXXX %>%
+  filter(Port.Name %in% top_ports) %>%
+  rowwise() %>%
+  mutate(Period = ifelse(Year.Landed < 2001, '1991-2000', 
+                         ifelse(Year.Landed < 2011, '2001-2010', '2011-2020'))) %>%
+  ungroup() %>%
+  # mutate(Trip.Target.Name = na_if(Trip.Target.Name, ''),
+  #        Target.Gear = paste(Trip.Target.Name, Description, sep = ' - ')) %>%
+  group_by(Period, Reporting.Area.Code, Port.Name, Year.Landed) %>% 
+  summarise(Landed.t = sum(Pounds..Detail.)*0.454/1000000) %>%
+  group_by(Period, Reporting.Area.Code, Port.Name) %>%
+  summarise(Landed.t = mean(Landed.t)) 
+
+# #%>%
+#   arrange(Period, Statistical.Area, desc(Landed.t)) %>%
+#   group_by(Period, Statistical.Area) %>%
+#   mutate(Prop.Landings = Landed.t/sum(Landed.t),
+#          Cumu.Prop = cumsum(Prop.Landings)) %>%
+#   ungroup() %>%
+#   filter(Cumu.Prop < 0.95)
+
+```
+
+View.
+```{r, fig.width=8, fig.height=8}
+these_periods()
+
+nmfs_to_port %>%
+  filter(Reporting.Area.Code != 680) %>% #don't know what this is but throw it away
+  filter(Period == '1991-2000') %>%
+  ggplot(aes(y = Landed.t, axis1 = Reporting.Area.Code, axis2 = Port.Name))+
+  geom_alluvium(aes(fill = factor(Reporting.Area.Code)), width = 1/12)+
+  geom_stratum(width = 1/12, fill = "white", color = "grey")+
+  geom_text(stat = "stratum", aes(label = after_stat(stratum)), size = 3)+
+  theme_bw()+
+  labs(title = '', fill = 'NMFS Area')
+  
 ```
 
