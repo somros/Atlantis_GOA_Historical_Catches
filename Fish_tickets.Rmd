@@ -409,10 +409,14 @@ for(i in 1:length(these_combos)){
 
 TODO: We need salmon statistical areas from ADF&G.
 
-Let's map the ports. 
+Let's map the ports and the NMFS areas (although those are not useful for salmon).
 ```{r, fig.width=12, fig.height=6}
 #write.csv(data.frame('Port'=top_ports), '../data/AKFIN/Fish_Tickets/ports.csv', row.names = F)
 ports <- read.csv('../data/AKFIN/Fish_Tickets/ports_coords.csv')
+
+# NMFS areas
+nmfs_areas <- st_read('../data/gf95_nmfs/gf95_nmfs.shp')
+nmfs_areas <- nmfs_areas %>% filter(NMFS_AREA %in% c(610,620,630,640,650))
 
 ports <- ports %>% 
   drop_na() %>%
@@ -423,7 +427,8 @@ port_bbox <- ports %>% st_bbox()
 
 ggplot()+
   geom_sf(data = coast_sf)+
-  geom_sf(data = ports, size = 2, color = 'magenta')+
+  geom_sf(data = ports, size = 5, color = 'magenta')+
+  geom_sf(data = nmfs_areas, color = 'black', fill = NA)+
   ggrepel::geom_label_repel(
     data = ports,
     aes(label = Port, geometry = geometry),
@@ -434,7 +439,7 @@ ggplot()+
   )+
   theme_bw()+
   coord_sf(xlim = c(port_bbox$xmin,port_bbox$xmax), ylim = c(port_bbox$ymin,port_bbox$ymax))+
-  labs(title = 'AK ports with highest mean annual (1991-2020) landings according to Fish Ticket data',
+  labs(title = 'AK ports with highest mean annual landings (1991-2020) based on Fish Ticket data',
        x = '', y = '')
 
 ```
@@ -467,18 +472,98 @@ nmfs_to_port <- datXXX %>%
 ```
 
 View.
-```{r, fig.width=8, fig.height=8}
-these_periods()
+```{r, fig.width=12, fig.height=11}
+these_periods <- nmfs_to_port %>% pull(Period) %>% unique()
 
-nmfs_to_port %>%
-  filter(Reporting.Area.Code != 680) %>% #don't know what this is but throw it away
-  filter(Period == '1991-2000') %>%
-  ggplot(aes(y = Landed.t, axis1 = Reporting.Area.Code, axis2 = Port.Name))+
-  geom_alluvium(aes(fill = factor(Reporting.Area.Code)), width = 1/12)+
-  geom_stratum(width = 1/12, fill = "white", color = "grey")+
-  geom_text(stat = "stratum", aes(label = after_stat(stratum)), size = 3)+
-  theme_bw()+
-  labs(title = '', fill = 'NMFS Area')
+# make plots for methods
+cbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+for(i in 1:length(these_periods)){
   
+  p <- nmfs_to_port %>%
+    filter(Reporting.Area.Code != 680) %>% #don't know what this is but throw it away
+    filter(Period == these_periods[i]) %>%
+    ggplot(aes(y = Landed.t, axis1 = Reporting.Area.Code, axis2 = Port.Name))+
+    geom_alluvium(aes(fill = factor(Reporting.Area.Code)), width = 1/16)+
+    scale_fill_manual(values=cbPalette)+
+    geom_stratum(width = 1/16, fill = "white", color = "grey")+
+    scale_x_discrete(breaks = NULL)+
+    theme_bw()+
+    theme(legend.position="none")+
+    ggrepel::geom_text_repel(
+      aes(label = ifelse(after_stat(x) == 1, as.character(after_stat(stratum)), "")),
+      stat = "stratum", size = 4, direction = "y", nudge_x = -3) +
+    ggrepel::geom_text_repel(
+      aes(label = ifelse(after_stat(x)  == 2, as.character(after_stat(stratum)), "")),
+      stat = "stratum", size = 4, direction = "y", nudge_x = 3, force = 4
+    )+
+    labs(title = paste('Mean annual landings for',these_periods[i],'based on Fish Tickets'),
+         y = 'Landings (t)')
+  
+  ggsave(paste0('../output/graphics/fleets/from_fish_tickets/alluvial/NMFS_to_port_',these_periods[i],'.png'),p,width=11,height=10)
+  
+}
+
 ```
 
+See where the target-gear combinations go to. It is a big list and we need to reduce it for visualisation purposes.
+```{r}
+targetgear_to_port <- datXXX %>%
+  filter(Port.Name %in% top_ports) %>%
+  rowwise() %>%
+  mutate(Period = ifelse(Year.Landed < 2001, '1991-2000', 
+                         ifelse(Year.Landed < 2011, '2001-2010', '2011-2020'))) %>%
+  ungroup() %>%
+  mutate(Trip.Target.Name = na_if(Trip.Target.Name, ''),
+         Target.Gear = paste(Trip.Target.Name, Description, sep = ' - ')) %>%
+  group_by(Period, Target.Gear, Port.Name, Year.Landed) %>% 
+  summarise(Landed.t = sum(Pounds..Detail.)*0.454/1000000) %>%
+  group_by(Period, Target.Gear, Port.Name) %>%
+  summarise(Landed.t = mean(Landed.t)) 
+```
+
+Drop for viewing purposes and plot.
+```{r, fig.width=12, fig.height=13}
+these_periods <- targetgear_to_port %>% pull(Period) %>% unique()
+
+top_combos <- targetgear_to_port %>%
+  group_by(Period) %>%
+  arrange(Period, desc(Landed.t)) %>%
+  mutate(Prop = Landed.t/sum(Landed.t),
+         Cumu = cumsum(Prop)) %>%
+  ungroup() %>%
+  filter(Cumu < 0.95) %>%
+  pull(Target.Gear) %>%
+  unique()
+
+for(i in 1:length(these_periods)){
+  
+  # make plots for methods
+  colourCount <- length(top_combos)
+  getPalette <- colorRampPalette(brewer.pal(12, "Paired"))
+  
+  p <- targetgear_to_port %>%
+    filter(Target.Gear %in% top_combos) %>% 
+    filter(Period == these_periods[i]) %>%
+    ggplot(aes(y = Landed.t, axis1 = Target.Gear, axis2 = Port.Name))+
+    geom_alluvium(aes(fill = factor(Target.Gear)), width = 1/16)+
+    scale_fill_manual(values = getPalette(colourCount))+
+    geom_stratum(width = 1/16, fill = "white", color = "grey")+
+    theme_bw()+
+    scale_x_discrete(breaks = NULL)+
+    ggrepel::geom_text_repel(
+      aes(label = ifelse(after_stat(x) == 1, as.character(after_stat(stratum)), "")),
+      stat = "stratum", size = 4, direction = "y", nudge_x = -3, force = 4) +
+    ggrepel::geom_text_repel(
+      aes(label = ifelse(after_stat(x)  == 2, as.character(after_stat(stratum)), "")),
+      stat = "stratum", size = 4, direction = "y", nudge_x = 3, force = 4
+    )+
+    theme(legend.position="none")+
+    labs(title = paste('Mean annual landings for',these_periods[i],'based on Fish Tickets'),
+         y = 'Landings (t)')
+  
+  ggsave(paste0('../output/graphics/fleets/from_fish_tickets/alluvial/targetgear_to_port_',these_periods[i],'.png'),p,width=12,height=10)
+  
+}
+
+```
