@@ -567,3 +567,68 @@ for(i in 1:length(these_periods)){
 }
 
 ```
+
+Let's zoom into one target-gear combination at a time, if need be, and have a look at the species composition of the landings.
+```{r}
+targetgear_to_port_species <- datXXX %>%
+  filter(Port.Name %in% top_ports, Species.Common.Name %in% top_species) %>%
+  rowwise() %>%
+  mutate(Period = ifelse(Year.Landed < 2001, '1991-2000', 
+                         ifelse(Year.Landed < 2011, '2001-2010', '2011-2020'))) %>%
+  ungroup() %>%
+  mutate(Trip.Target.Name = na_if(Trip.Target.Name, ''),
+         Target.Gear = paste(Trip.Target.Name, Description, sep = ' - ')) %>%
+  group_by(Period, Target.Gear, Port.Name, Year.Landed, Species.Common.Name) %>% 
+  summarise(Landed.t = sum(Pounds..Detail.)*0.454/1000000) %>%
+  group_by(Period, Target.Gear, Port.Name, Species.Common.Name) %>%
+  summarise(Landed.t = mean(Landed.t)) 
+```
+
+Drop for viewing purposes and plot.
+```{r, fig.width=12, fig.height=13}
+these_periods <- targetgear_to_port_species %>% pull(Period) %>% unique()
+these_combos <-  targetgear_to_port_species %>% pull(Target.Gear) %>% unique()
+
+for(i in 1:length(these_periods)){
+  
+  for(j in 1:length(these_combos)){
+    
+    this_set <- targetgear_to_port_species %>%
+      filter(Period == these_periods[i], Target.Gear == these_combos[j])
+    
+    # write this without slash for the path name when saving the image
+    for_path <- gsub('/','--',these_combos[j])
+    
+    if(nrow(this_set)>0){
+      # make plots for methods
+    colourCount <- length(this_set %>% pull(Species.Common.Name) %>% unique())
+    getPalette <- colorRampPalette(brewer.pal(12, "Paired"))
+    
+    p <-  this_set %>%
+      ggplot(aes(y = Landed.t, axis1 = Species.Common.Name, axis2 = Port.Name))+
+      geom_alluvium(aes(fill = factor(Species.Common.Name)), width = 1/16)+
+      scale_fill_manual(values = getPalette(colourCount))+
+      geom_stratum(width = 1/16, fill = "white", color = "grey")+
+      theme_bw()+
+      scale_x_discrete(breaks = NULL)+
+      ggrepel::geom_text_repel(
+        aes(label = ifelse(after_stat(x) == 1, as.character(after_stat(stratum)), "")),
+        stat = "stratum", size = 4, direction = "y", nudge_x = -3, force = 4) +
+      ggrepel::geom_text_repel(
+        aes(label = ifelse(after_stat(x)  == 2, as.character(after_stat(stratum)), "")),
+        stat = "stratum", size = 4, direction = "y", nudge_x = 3, force = 4
+      )+
+      #theme(legend.position="none")+
+      labs(title = paste('Mean annual landings for',these_periods[i],these_combos[j],'\nbased on Fish Tickets'),
+           y = 'Landings (t)')
+    
+    p
+    
+    ggsave(paste0('../output/graphics/fleets/from_fish_tickets/alluvial/targetgear_to_port_species/',
+                  these_periods[i],for_path,'.png'),p,width=12,height=10)
+    }
+    
+  }
+  
+}
+```
