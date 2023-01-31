@@ -332,7 +332,7 @@ for(b in 1:length(unique(all_catch$box_id))){
   for(i in 1:length(all_fg)){
     cat(paste0("## COLUMN", i+1, ".name ", all_fg[i], "\n"), file = header_file, append = T)
     cat(paste0("## COLUMN", i+1, ".long_name ", all_fg[i], "\n"), file = header_file, append = T)
-    cat(paste0("## COLUMN", i+1, ".units mg N s-1\n"), file = header_file, append = T)
+    cat(paste0("## COLUMN", i+1, ".units mg s-1\n"), file = header_file, append = T)
     cat(paste0("## COLUMN", i+1, ".missing_value 0\n"), file = header_file, append = T)
     cat("##\n", file = header_file, append = T)
   }

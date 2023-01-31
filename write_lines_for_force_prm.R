@@ -43,7 +43,6 @@ pts <- pts %>%
 #   geom_sf(data = pts_sf, aes(color = box))
 # # looks good
 
-
 # write lines
 
 newfile <- paste0('../output/catch_for_forceprm.prm')
