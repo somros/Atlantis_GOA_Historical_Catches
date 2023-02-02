@@ -54,9 +54,9 @@ for(i in 1:length(goa_boxes)){
   this_x <- pts %>% filter(box == this_box) %>% pull(x)
   this_y <- pts %>% filter(box == this_box) %>% pull(y)
   
-  cat(paste0('Catchts', this_box, '.name', ' ', 'box', this_box, 'catch'), file=newfile, append=TRUE,'\n')
-  cat(paste0('Catchts', this_box, '.location', ' ', this_x, ' ', this_y, ' ', this_box), file=newfile, append=TRUE,'\n')
-  cat(paste0('Catchts', this_box, '.data', ' ', '../goa_catch_hist/catch', this_box, '.ts'), file=newfile, append=TRUE,'\n')
+  cat(paste0('Catchts', this_box, '.name', ' ', 'box', this_box, 'catch'), file=newfile, append=TRUE, sep='\n')
+  cat(paste0('Catchts', this_box, '.location', ' ', this_x, ' ', this_y, ' ', this_box), file=newfile, append=TRUE,sep='\n')
+  cat(paste0('Catchts', this_box, '.data', ' ', 'forcings/goa_catch_hist/catch', this_box, '.ts'), file=newfile, append=TRUE,sep='\n')
   cat(paste0('Catchts', this_box, '.rewind', ' ', 0), file=newfile, append=TRUE,'\n\n')
   
 }
